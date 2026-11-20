@@ -96,6 +96,32 @@
   .key i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
   .hatch { background: repeating-linear-gradient(135deg, #b8c4cf 0 3px, #eef1f4 3px 6px); }
 
+  .pstats { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .pstat { background: #f5f7f9; border-radius: 14px; padding: 14px 16px; }
+  .pstat.main { background: var(--ink); color: #fff; }
+  .pstat span { display: block; font-size: 14px; font-weight: 600; color: var(--muted); }
+  .pstat.main span, .pstat.main em { color: #b9c6d3; }
+  .pstat strong { display: block; font: 700 40px/1.05 var(--display); font-variant-numeric: tabular-nums; }
+  .pstat em { font-style: normal; font-size: 14px; color: var(--muted); }
+  table.pt { width: 100%; border-collapse: collapse; font-size: 15px; margin-top: 14px; }
+  table.pt th { text-align: right; color: var(--muted); font-weight: 600; font-size: 13px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  table.pt th:first-child, table.pt td:first-child { text-align: left; }
+  table.pt td { text-align: right; padding: 8px; border-bottom: 1px solid #eef1f4; font-variant-numeric: tabular-nums; }
+  table.pt tr.past td { color: var(--muted); }
+  table.pt tr.now td { background: #f1f4f7; font-weight: 700; }
+  table.pt td.p { font-weight: 700; color: var(--ink); }
+  table.pt tfoot td { font-weight: 700; border-top: 2px solid var(--ink); border-bottom: 0; }
+  .rules { display: none; background: #f5f7f9; border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
+  .rules.on { display: block; }
+  .rules-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 18px; }
+  .rule { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 8px; align-items: center; }
+  .rule label { font-weight: 600; font-size: 15px; line-height: 1.2; }
+  .rule label small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+  .rule .inp { display: flex; align-items: center; gap: 4px; background: #fff; border: 1px solid #c4ccd4; border-radius: 10px; padding: 0 8px; }
+  .rule input { width: 100%; border: 0; background: none; font: 600 16px var(--body); padding: 8px 0; text-align: right; outline: none; }
+  .rules h4 { margin: 14px 0 8px; font: 700 13px var(--display); letter-spacing: .08em; color: var(--muted); }
+  .rules h4:first-child { margin-top: 0; }
+  .rules .save { margin-top: 14px; background: var(--ink); color: #fff; border: 0; border-radius: 12px; padding: 10px 18px; font-weight: 700; }
   .split { display: grid; gap: 16px; }
   .split-row { display: grid; grid-template-columns: 140px minmax(0, 1fr) 130px; gap: 14px; align-items: center; }
   .split-name { font: 700 22px var(--display); }
@@ -177,6 +203,8 @@
     .hero-grid > :first-child { grid-column: 1 / -1; }
   }
   @media (max-width: 600px) {
+    .pstats { grid-template-columns: 1fr 1fr; } .pstats .main { grid-column: 1 / -1; } .pstat strong { font-size: 30px; }
+    table.pt .hide-s { display: none; }
     .wrap { padding: 0 12px 50px; }
     .marks { gap: 8px; } .marks img { height: 24px; } .vpmark { font-size: 15px; letter-spacing: .08em; } .vpmark small { font-size: 8px; letter-spacing: .2em; } .marks .plus { font-size: 16px; }
     .top-r .upd { display: none; }
@@ -253,7 +281,7 @@ function periods() {
   ];
 }
 
-const F = { biz: 'Both', period: 'fy', from: '', to: '', cats: [], sites: [], statuses: [], q: '', panel: false, colourBy: 'biz', showJobs: innerWidth < 600 ? 25 : 60, animated: false };
+const F = { rules: false, biz: 'Both', period: 'fy', from: '', to: '', cats: [], sites: [], statuses: [], q: '', panel: false, colourBy: 'biz', showJobs: innerWidth < 600 ? 25 : 60, animated: false };
 try { Object.assign(F, JSON.parse(localStorage.getItem('hq_f') || '{}'), { panel: false, showJobs: innerWidth < 600 ? 25 : 60, animated: false }); } catch (e) {}
 const saveF = () => { try { localStorage.setItem('hq_f', JSON.stringify({ biz: F.biz, period: F.period, from: F.from, to: F.to, cats: F.cats, sites: F.sites, statuses: F.statuses, colourBy: F.colourBy })); } catch (e) {} };
 
@@ -442,6 +470,72 @@ function renderCash(list) {
     <div class="key"><span><i style="background:#21334a"></i>Received (after PB)</span><span><i style="background:#c62828"></i>Overdue</span><span><i style="background:#4b6a8c"></i>Invoiced, due</span><span><i style="background:#8fa6bf"></i>Done or approved, forecast</span><span><i class="hatch"></i>Pipeline, forecast</span></div></section>`;
 }
 
+/* ---------- expected profit ---------- */
+function rulesOf() { return D.rules || { flat: {}, pct: {}, split: [{ name: 'Jeff', pct: 50 }, { name: 'Dan', pct: 50 }], notes: {} }; }
+const CONFIRMED = j => stageOf(j) !== 'pipe';
+// profit for a set of jobs in ONE month, split into confirmed and pipeline, and by business
+function monthProfit(l) {
+  const R = rulesOf(), out = { firm: 0, pipe: 0, biz: {} };
+  BIZ_NAMES.forEach(b => out.biz[b] = { firm: 0, pipe: 0 });
+  l.forEach(j => {
+    if (R.flat[j.category] != null) return;
+    const pct = R.pct[j.category] != null ? R.pct[j.category] : 75;
+    const p = j.price * pct / 100, k = CONFIRMED(j) ? 'firm' : 'pipe';
+    out[k] += p; out.biz[j.business][k] += p;
+  });
+  Object.keys(R.flat).forEach(cat => {
+    const jj = l.filter(j => j.category === cat);
+    if (!jj.length) return;
+    const k = jj.some(CONFIRMED) ? 'firm' : 'pipe', amt = Number(R.flat[cat]) || 0;
+    out[k] += amt; out.biz[jj[0].business][k] += amt;
+  });
+  out.total = out.firm + out.pipe;
+  return out;
+}
+function renderProfit(list) {
+  const R = rulesOf(), months = monthsIn(range());
+  const rows = months.map(m => { const l = list.filter(j => j.month === m); return Object.assign({ m, rev: l.reduce((t, j) => t + j.price, 0) }, monthProfit(l)); });
+  const tot = rows.reduce((a, r) => ({ rev: a.rev + r.rev, firm: a.firm + r.firm, pipe: a.pipe + r.pipe, total: a.total + r.total }), { rev: 0, firm: 0, pipe: 0, total: 0 });
+  const ahead = rows.filter(r => r.m >= NOW()).reduce((t, r) => t + r.total, 0);
+  const cols = rows.map(r => ({ m: r.m, total: r.total, parts: BIZ_NAMES.map(b => [{ v: r.biz[b].firm, color: BIZ[b].color, label: b + ' profit, confirmed' }, { v: r.biz[b].pipe, color: BIZ[b].color, hatch: { Veridian: 'hatchV', Frontline: 'hatchF', Pulse: 'hatchP' }[b], tipColor: BIZ[b].color, label: b + ' profit, pipeline' }]).flat() }));
+  const sp = R.split;
+  const share = (v, p) => v * (p.pct || 0) / 100;
+  const cats = [...new Set(D.jobs.map(j => j.category))].sort();
+  return `<section class="panel" id="profit"><div class="p-head"><div><h3>Expected profit</h3><p>Worked out from your profit rules for each job type, then split ${sp.map(p => `${esc(p.name)} ${p.pct}%`).join(' / ')}</p></div>
+      <div class="p-tools"><button class="morebtn" id="rulesBtn">Profit rules</button></div></div>
+    <div class="rules ${F.rules ? 'on' : ''}">
+      <h4>Profit as a % of the job</h4><div class="rules-grid">${cats.filter(c => R.flat[c] == null).map(c => `<div class="rule"><label>${esc(c)}${R.notes[c] ? `<small>${esc(R.notes[c])}</small>` : ''}</label><div class="inp"><input inputmode="decimal" data-rpct="${esc(c)}" value="${R.pct[c] != null ? R.pct[c] : 75}">%</div></div>`).join('')}</div>
+      <h4>Flat profit per month</h4><div class="rules-grid">${Object.keys(R.flat).map(c => `<div class="rule"><label>${esc(c)}<small>${esc(R.notes[c] || 'when there is income that month')}</small></label><div class="inp">$<input inputmode="decimal" data-rflat="${esc(c)}" value="${R.flat[c]}"></div></div>`).join('')}</div>
+      <h4>Split</h4><div class="rules-grid">${sp.map((p, i) => `<div class="rule"><label>${esc(p.name)}</label><div class="inp"><input inputmode="decimal" data-rsplit="${i}" value="${p.pct}">%</div></div>`).join('')}</div>
+      <button class="save" id="rulesSave">Save rules</button>
+    </div>
+    <div class="pstats">
+      <div class="pstat main"><span>Expected profit</span><strong data-count="${tot.total}">${k$(tot.total)}</strong><em>${k$(tot.firm)} from confirmed work · ${k$(ahead)} from ${mShort(NOW())} on</em></div>
+      ${sp.map(p => `<div class="pstat"><span>${esc(p.name)}</span><strong>${k$(share(tot.total, p))}</strong><em>${k$(share(tot.firm, p))} confirmed</em></div>`).join('')}
+    </div>
+    ${barChart('prof', months, cols, { label: 'Expected profit by month' })}
+    <div class="key">${BIZ_NAMES.map(b => `<span><i style="background:${BIZ[b].color}"></i>${b}</span>`).join('')}<span><i class="hatch"></i>Striped is pipeline (quoted, RFQ, planned)</span></div>
+    <div class="tablewrap"><table class="pt"><thead><tr><th>Month</th><th class="hide-s">Income</th><th>Profit</th>${sp.map(p => `<th>${esc(p.name)}</th>`).join('')}<th class="hide-s">Confirmed</th></tr></thead><tbody>
+      ${rows.map(r => `<tr class="${r.m < NOW() ? 'past' : r.m === NOW() ? 'now' : ''}"><td>${mLong(r.m)}</td><td class="hide-s">${money(r.rev)}</td><td class="p">${money(r.total)}</td>${sp.map(p => `<td>${money(share(r.total, p))}</td>`).join('')}<td class="hide-s">${money(r.firm)}</td></tr>`).join('')}
+    </tbody><tfoot><tr><td>Total</td><td class="hide-s">${money(tot.rev)}</td><td>${money(tot.total)}</td>${sp.map(p => `<td>${money(share(tot.total, p))}</td>`).join('')}<td class="hide-s">${money(tot.firm)}</td></tr></tfoot></table></div>
+  </section>`;
+}
+function bindProfit() {
+  const b = $('#rulesBtn'); if (b) b.onclick = () => { F.rules = !F.rules; $('.rules').classList.toggle('on', F.rules); };
+  const s = $('#rulesSave'); if (!s) return;
+  s.onclick = () => {
+    const R = JSON.parse(JSON.stringify(rulesOf()));
+    $$('[data-rpct]').forEach(i => R.pct[i.dataset.rpct] = Number(i.value) || 0);
+    $$('[data-rflat]').forEach(i => R.flat[i.dataset.rflat] = Number(i.value) || 0);
+    $$('[data-rsplit]').forEach(i => R.split[Number(i.dataset.rsplit)].pct = Number(i.value) || 0);
+    const done = r => { D.rules = r; F.rules = false; F.animated = true; go(); const p = $('#profit'); if (p) p.scrollIntoView({ block: 'start' }); };
+    if (window.google && google.script && google.script.run) {
+      s.textContent = 'Saving…';
+      google.script.run.withSuccessHandler(done).withFailureHandler(e => { s.textContent = 'Save rules'; alert('Could not save: ' + (e && e.message || e)); }).saveRules(R);
+    } else done(R);
+  };
+}
+
 /* ---------- business split, job type, site ---------- */
 function renderSplit(list) {
   if (F.biz !== 'Both') return '';
@@ -510,7 +604,7 @@ function go() {
   saveF();
   renderFilters();
   const list = filtered();
-  $('#main').innerHTML = renderHero(list) + renderKpis(list) + renderIncome(list) + renderCash(list) + renderSplit(list)
+  $('#main').innerHTML = renderHero(list) + renderKpis(list) + renderIncome(list) + renderProfit(list) + renderCash(list) + renderSplit(list)
     + `<div class="two">${rankPanel('By job type', 'Tap one to filter', list, j => j.category, 'fcat')}${rankPanel('By site', 'Tap one to filter', list, j => j.site, 'fsite', k => k === 'Unassigned' ? 'Not set yet' : k)}</div>`
     + `<div class="two">${renderPayments()}${renderFrontline() || '<div></div>'}</div>`
     + renderJobs(list)
@@ -522,9 +616,9 @@ function go() {
   const q = $('#q');
   if (q) q.oninput = () => { F.q = q.value; clearTimeout(go._t); go._t = setTimeout(() => { const pos = q.selectionStart; go(); const n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); }, 250); };
   const mj = $('#moreJobs'); if (mj) mj.onclick = () => { F.showJobs += 100; go(); };
-  bindTips();
+  bindTips(); bindProfit();
   // scroll charts to today on small screens
-  ['#inc', '#cash'].forEach(id => { const c = $(id); if (c && c.scrollWidth > c.clientWidth) { const ms = monthsIn(range()), i = ms.indexOf(NOW()); c.scrollLeft = i < 0 ? 0 : Math.max(0, (i - 2) / ms.length * c.scrollWidth); } });
+  ['#inc', '#cash', '#prof'].forEach(id => { const c = $(id); if (c && c.scrollWidth > c.clientWidth) { const ms = monthsIn(range()), i = ms.indexOf(NOW()); c.scrollLeft = i < 0 ? 0 : Math.max(0, (i - 2) / ms.length * c.scrollWidth); } });
   if (!F.animated && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
     $('#main').classList.add('enter');
     $$('[data-count]').forEach(el => { const to = Number(el.dataset.count), t0 = performance.now(); const tick = t => { const p = Math.min(1, (t - t0) / 1000), e = 1 - Math.pow(1 - p, 3); el.textContent = k$(to * e); if (p < 1) requestAnimationFrame(tick); }; requestAnimationFrame(tick); });

@@ -44,7 +44,7 @@ function getData(fresh) {
   } else cache.remove('HQ_PAGE');
   const out = {
     ok: true, built: new Date().toISOString(), today: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'), payDays: PAY_DAYS,
-    jobs: readRegister_(), cash: readPaymentBatches_(), frontline: readFrontline_(),
+    jobs: readRegister_(), cash: readPaymentBatches_(), frontline: readFrontline_(), rules: readRules_(),
   };
   const s = JSON.stringify(out);
   if (s.length < 95000) cache.put('HQ_DATA', s, 300);
@@ -183,6 +183,41 @@ function readFrontline_() {
     if (rep) rep.getDataRange().getValues().slice(1).forEach(r => { if (r[0] && ['Quoted', 'PO Received'].indexOf(r[12]) >= 0) repOpen += Number(r[11]) || 0; });
     return { bank: bank, bankN: bankN, requested: requested, repairsOpen: repOpen };
   } catch (e) { return { bank: 0, bankN: 0, requested: 0, repairsOpen: 0, error: String(e) }; }
+}
+
+/* ---------------- profit rules (editable from the dashboard) ---------------- */
+
+const DEFAULT_RULES = {
+  flat: { 'IoT sensors': 6000 },  // flat profit per month when there is sensor income that month
+  pct: {                          // profit as % of revenue
+    'Passive fire': 75,           // minus 10% overhead, minus 15% material
+    'Air filters': 75,            // minus 25% material
+    'SIT': 40,
+    'Fire repairs': 75, 'Mechanical repairs': 75, 'Inspections and reports': 75, 'Kitchen': 75, 'Water filters': 75, 'Projects': 75,
+  },
+  notes: { 'Passive fire': 'minus 10% overhead, minus 15% material', 'Air filters': 'minus 25% material', 'IoT sensors': 'flat per month', 'SIT': 'about 40%' },
+  split: [{ name: 'Jeff', pct: 50 }, { name: 'Dan', pct: 50 }],
+};
+
+function readRules_() {
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty('PROFIT_RULES');
+    if (!raw) return DEFAULT_RULES;
+    const r = JSON.parse(raw);
+    return { flat: Object.assign({}, DEFAULT_RULES.flat, r.flat), pct: Object.assign({}, DEFAULT_RULES.pct, r.pct), notes: Object.assign({}, DEFAULT_RULES.notes, r.notes), split: r.split || DEFAULT_RULES.split };
+  } catch (e) { return DEFAULT_RULES; }
+}
+
+/** Called from the dashboard's Profit rules panel. */
+function saveRules(r) {
+  const clean = { flat: {}, pct: {}, notes: (r && r.notes) || {}, split: [] };
+  Object.keys((r && r.flat) || {}).forEach(k => { clean.flat[k] = Math.max(0, num_(r.flat[k])); });
+  Object.keys((r && r.pct) || {}).forEach(k => { clean.pct[k] = Math.max(0, Math.min(100, num_(r.pct[k]))); });
+  ((r && r.split) || []).forEach(p => { if (p && p.name) clean.split.push({ name: String(p.name).slice(0, 30), pct: Math.max(0, Math.min(100, num_(p.pct))) }); });
+  if (!clean.split.length) clean.split = DEFAULT_RULES.split;
+  PropertiesService.getScriptProperties().setProperty('PROFIT_RULES', JSON.stringify(clean));
+  CacheService.getScriptCache().remove('HQ_DATA');
+  return readRules_();
 }
 
 /** Run once from the editor to approve access (Sheets, fetching the page). */
