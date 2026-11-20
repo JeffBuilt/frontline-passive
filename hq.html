@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --ink: #21334a; --ink2: #182739; --fire: #e8572a; --fire-dk: #c2410c; --vp: #0f6b5c; --vp-lt: #d6ece6; --pu: #6d3fc0; --pu-lt: #ebe2fb;
+    --ink: #21334a; --ink2: #182739; --fire: #e8572a; --fire-dk: #c2410c; --vp: #21334a; --vp-lt: #e1e6ec; --pu: #7b93ad; --pu-lt: #e9eef3;
     --paid: #21334a; --inv: #4b6a8c; --done: #8fa6bf; --appr: #c5d2de; --pipe: #e3e8ed;
     --bg: #eef1f4; --card: #fff; --line: #dde2e7; --muted: #66727e; --text: #1b2733; --hivis: #ffd23f; --red: #c62828;
     --body: 'Barlow', system-ui, sans-serif; --display: 'Barlow Condensed', 'Barlow', system-ui, sans-serif;
@@ -25,7 +25,7 @@
   .vpmark { font: 700 24px/1 var(--display); letter-spacing: .14em; color: #fff; }
   .vpmark small { display: block; font: 600 11px var(--body); letter-spacing: .32em; color: #9fb3c5; margin-top: 4px; }
   .marks .plus { color: #6f859b; font: 600 22px var(--display); }
-  .vpmark.pulse { color: #c9b6f2; }
+
   .marks img { height: 38px; width: auto; display: block; }
   .top-r { display: flex; align-items: center; gap: 10px; color: #c9d3dd; font-size: 14px; }
   .btn-ghost { background: transparent; border: 1px solid #4a5f7a; color: #fff; border-radius: 999px; padding: 7px 14px; font-weight: 600; }
@@ -35,7 +35,7 @@
   .seg { display: inline-flex; background: #d9dee4; border-radius: 12px; padding: 3px; }
   .seg button { border: 0; background: none; border-radius: 9px; padding: 7px 13px; font-weight: 600; color: #4a5866; min-height: 36px; white-space: nowrap; }
   .seg button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(33,51,74,.18); }
-  .seg button.on.b-Veridian { color: var(--vp); } .seg button.on.b-Frontline { color: var(--fire-dk); } .seg button.on.b-Pulse { color: var(--pu); }
+  
   select.period { border: 0; background: #d9dee4; border-radius: 12px; padding: 9px 12px; font: 600 15px var(--body); color: var(--ink); min-height: 42px; }
   .morebtn { border: 1px solid #c4ccd4; background: #fff; border-radius: 12px; padding: 8px 14px; font-weight: 600; min-height: 42px; }
   .morebtn b { background: var(--fire); color: #fff; border-radius: 999px; padding: 0 7px; font-size: 13px; margin-left: 4px; }
@@ -98,7 +98,7 @@
   .split { display: grid; gap: 16px; }
   .split-row { display: grid; grid-template-columns: 140px minmax(0, 1fr) 130px; gap: 14px; align-items: center; }
   .split-name { font: 700 22px var(--display); }
-  .split-name.Veridian { color: var(--vp); } .split-name.Frontline { color: var(--fire-dk); } .split-name.Pulse { color: var(--pu); }
+  .split-name.Frontline { color: var(--fire-dk); }
   .split-name span { display: block; font: 500 13px var(--body); color: var(--muted); }
   .sbar { display: flex; height: 26px; border-radius: 8px; overflow: hidden; background: #f0f2f5; }
   .sbar span { display: block; height: 100%; }
@@ -125,7 +125,7 @@
   .pay-j div { color: var(--muted); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pay-v { text-align: right; font: 700 20px var(--display); font-variant-numeric: tabular-nums; }
   .tag { display: inline-block; font: 600 12px var(--body); border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 1px; }
-  .tag.Veridian { background: var(--vp-lt); color: var(--vp); } .tag.Frontline { background: #fde3d8; color: var(--fire-dk); } .tag.Pulse { background: var(--pu-lt); color: var(--pu); }
+  .tag.Veridian { background: var(--vp-lt); color: var(--vp); } .tag.Frontline { background: #fde3d8; color: var(--fire-dk); } .tag.Pulse { background: var(--pu-lt); color: #4b6178; }
   .tag.late { background: #fde2e2; color: var(--red); }
   .tag.est { background: #eef1f4; color: var(--muted); }
 
@@ -219,7 +219,7 @@ const STAGES = [
 const PIPE = ['quoted', 'rfq', 'planned'];
 const stageOf = j => PIPE.includes(j.stage) ? 'pipe' : j.stage;
 const STATUS_GROUPS = [['paid', 'Paid'], ['invoiced', 'Invoiced'], ['done', 'Done'], ['approved', 'Approved'], ['quoted', 'Quoted'], ['rfq', 'RFQ'], ['planned', 'Planned']];
-const BIZ = { Veridian: { color: '#0f6b5c', light: '#d6ece6', note: 'Filters, mechanical, reports', short: 'VP' }, Frontline: { color: '#e8572a', light: '#fde3d8', note: 'Passive fire, repairs, SIT', short: 'FL' }, Pulse: { color: '#6d3fc0', light: '#ebe2fb', note: 'IoT sensors and subscriptions', short: 'PU' } };
+const BIZ = { Veridian: { color: '#21334a', light: '#e1e6ec', note: 'Filters, mechanical, reports', short: 'VP' }, Frontline: { color: '#e8572a', light: '#fde3d8', note: 'Passive fire, repairs, SIT', short: 'FL' }, Pulse: { color: '#8fa6bf', light: '#eef2f6', note: 'IoT sensors and subscriptions', short: 'PU' } };
 const BIZ_NAMES = Object.keys(BIZ);
 
 const $ = s => document.querySelector(s), $$ = s => Array.from(document.querySelectorAll(s));
@@ -370,8 +370,8 @@ function barChart(id, months, cols, opts) {
   return `<div class="chart" id="${id}"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label)}">
     <defs><pattern id="hatch-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#eef1f4"/><rect width="2.6" height="6" fill="#aab7c3"/></pattern>
       <pattern id="hatchF-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fde3d8"/><rect width="2.6" height="6" fill="#e8572a"/></pattern>
-      <pattern id="hatchV-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#d6ece6"/><rect width="2.6" height="6" fill="#0f6b5c"/></pattern>
-      <pattern id="hatchP-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#ebe2fb"/><rect width="2.6" height="6" fill="#6d3fc0"/></pattern></defs>
+      <pattern id="hatchV-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#e1e6ec"/><rect width="2.6" height="6" fill="#21334a"/></pattern>
+      <pattern id="hatchP-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#eef2f6"/><rect width="2.6" height="6" fill="#8fa6bf"/></pattern></defs>
     ${ticks.map(t => `<line class="grid" x1="${pl}" x2="${W}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${pl - 8}" y="${y(t) + 4}" text-anchor="end">${t ? k$(t) : '0'}</text>`).join('')}
     ${cols.map((c, i) => {
       const x = pl + i * cw + (cw - bw) / 2; let acc = 0;
@@ -426,7 +426,7 @@ function renderCash(list) {
     const fc = l.filter(j => j.stage === 'done' || j.stage === 'approved').reduce((t, j) => t + j.price, 0);
     const pipe = l.filter(j => PIPE.includes(j.stage)).reduce((t, j) => t + j.price, 0);
     const parts = [
-      { v: rec, color: '#0f6b5c', label: 'Received' },
+      { v: rec, color: '#21334a', label: 'Received' },
       { v: late, color: '#c62828', label: 'Overdue' },
       { v: due, color: '#4b6a8c', label: 'Invoiced, due' },
       { v: fc, color: '#8fa6bf', label: 'Work done or approved' },
@@ -438,7 +438,7 @@ function renderCash(list) {
   return `<section class="panel"><div class="p-head"><div><h3>Cash flow</h3><p>When the money lands: end of the invoice month + ${D.payDays} days. Not invoiced yet is forecast from the end of its work month.</p></div>
     <p><b>${k$(next3)}</b> confirmed to land in the next 3 months</p></div>
     ${barChart('cash', months, cols, { label: 'Cash expected by month' })}
-    <div class="key"><span><i style="background:#0f6b5c"></i>Received (after PB)</span><span><i style="background:#c62828"></i>Overdue</span><span><i style="background:#4b6a8c"></i>Invoiced, due</span><span><i style="background:#8fa6bf"></i>Done or approved, forecast</span><span><i class="hatch"></i>Pipeline, forecast</span></div></section>`;
+    <div class="key"><span><i style="background:#21334a"></i>Received (after PB)</span><span><i style="background:#c62828"></i>Overdue</span><span><i style="background:#4b6a8c"></i>Invoiced, due</span><span><i style="background:#8fa6bf"></i>Done or approved, forecast</span><span><i class="hatch"></i>Pipeline, forecast</span></div></section>`;
 }
 
 /* ---------- business split, job type, site ---------- */
