@@ -1,5 +1,5 @@
 /**
- * Frontline Compliance and Fire - passive fire backend (v1.8)
+ * Frontline Compliance and Fire - backend (v2.0): passive fire, fire repairs, SIT, back office
  * Bound to the "Passive Fire Master" Google Sheet (Extensions > Apps Script).
  * Deploy > New deployment > Web app: Execute as "Me", Who has access "Anyone".
  * Phones need a setup code (word + 4 digits) from addUser() (staff) or addClient() (clients).
@@ -10,7 +10,7 @@
 
 const SHEET = {
   pens: 'Penetrations', rates: 'Rates', access: 'Access', locations: 'Locations',
-  settings: 'Settings', users: 'Users', pos: 'POs',
+  settings: 'Settings', users: 'Users', pos: 'POs', repairs: 'Repairs', sit: 'SIT',
 };
 
 // Penetrations columns (1-based)
@@ -39,18 +39,30 @@ function doPost(e) {
   const user = checkKey_(body.key);
   if (!user) return json_({ ok: false, error: 'App key not recognised. Ask Jeff for a new setup code.' });
   try {
-    if (user.role === 'client') {
-      switch (body.action) {
-        case 'config': return json_(getClientConfig_(user));
-        case 'request': return json_(withLock_(() => requestPen_(user, body.record)));
-        default: return json_({ ok: false, error: 'Not available on a client code' });
-      }
-    }
-    switch (body.action) {
+    migrate_();
+    const P = user.perms, a = body.action;
+    const need = ok => { if (!ok) throw new Error('Your login does not have access to that. Ask Jeff.'); };
+    switch (a) {
       case 'config': return json_(getConfig_(user));
-      case 'submit': return json_(withLock_(() => submitPen_(user, body.record)));
-      case 'complete': return json_(withLock_(() => completePen_(user, body.record)));
-      case 'update': return json_(withLock_(() => updatePen_(user, body.record)));
+      // passive fire
+      case 'submit': case 'complete': case 'update': need(P.passive === 'full');
+        return json_(withLock_(() => a === 'submit' ? submitPen_(user, body.record) : a === 'complete' ? completePen_(user, body.record) : updatePen_(user, body.record)));
+      case 'request': need(P.passive !== 'none'); return json_(withLock_(() => requestPen_(user, body.record)));
+      // fire repairs
+      case 'repairLog': need(P.repairs !== 'none'); return json_(withLock_(() => repairLog_(user, body.record)));
+      case 'repairUpdate': need(P.repairs === 'full'); return json_(withLock_(() => repairUpdate_(user, body.record)));
+      case 'repairDone': need(P.repairs === 'full'); return json_(withLock_(() => repairDone_(user, body.record)));
+      // SIT
+      case 'sitSave': need(P.sit === 'edit'); return json_(withLock_(() => sitSave_(user, body.record)));
+      // back office
+      case 'dashboard': need(P.dashboard); return json_(dashboard_(user, body.site || ''));
+      case 'plan': need(P.admin); return json_(withLock_(() => { dropDashCache_(); return planMonth(body.month || nextUnplannedMonth_()); }));
+      case 'unplan': need(P.admin); return json_(withLock_(() => { dropDashCache_(); return unplanMonth(body.month); }));
+      case 'users': need(P.admin); return json_(listUsers_());
+      case 'userSave': need(P.admin); return json_(withLock_(() => saveUser_(user, body.user || {})));
+      case 'userReset': need(P.admin); return json_(withLock_(() => resetUser_(body.name)));
+      case 'locResolve': need(P.admin); return json_(withLock_(() => locResolve_(user, body.from, body.to, body.buildingName)));
+      case 'buildingSave': need(P.admin); return json_(withLock_(() => buildingSave_(body.site, body.code, body.name)));
       default: return json_({ ok: false, error: 'Unknown action' });
     }
   } catch (err) {
@@ -68,9 +80,7 @@ function checkKey_(key) {
   const hash = sha256_(String(key).trim().toLowerCase());
   const rows = rows_(SHEET.users);
   for (const r of rows) {
-    if (String(r[2]) === hash && String(r[3]).toLowerCase() === 'yes') {
-      return { name: String(r[0]), email: String(r[1]), role: String(r[5] || '').toLowerCase() === 'client' ? 'client' : 'staff', company: String(r[6] || '') };
-    }
+    if (String(r[2]) === hash && String(r[3]).toLowerCase() === 'yes') return userFromRow_(r);
   }
   cache.put('KEY_FAILS', String(fails + 1), 3600);
   return null;
@@ -83,7 +93,7 @@ function sha256_(s) {
 
 /* ================= config ================= */
 
-function getConfig_(user) {
+function getPassiveFullConfig_(user) {
   const settings = settings_();
   const rates = rows_(SHEET.rates)
     .filter(r => r[0] && String(r[4]).toLowerCase() !== 'no')
@@ -95,7 +105,7 @@ function getConfig_(user) {
   const substrates = String(settings['Substrate options'] || 'Plasterboard, Block / brick, Concrete, Other')
     .split(',').map(s => s.trim()).filter(String);
 
-  const records = rows_(SHEET.pens).filter(r => r[C.code - 1] && r[C.status - 1] !== 'Removed').map(recordOut_);
+  const records = rows_(SHEET.pens).filter(r => r[C.code - 1] && r[C.status - 1] !== 'Removed' && siteOk_(user, r[C.site - 1])).map(recordOut_);
 
   const buildings = {};
   const bsh = SpreadsheetApp.getActive().getSheetByName('Buildings');
@@ -147,6 +157,7 @@ function submitPen_(user, rec) {
     }
   }
 
+  Object.assign(rec, normLoc_(rec, user));
   const folder = locationFolder_(rec.site, rec.building, rec.level, rec.room);
   const before = savePhotos_(folder, code, 'before', rec.photos || []);
   const after = savePhotos_(folder, code, 'after', rec.afterPhotos || []);
@@ -173,13 +184,12 @@ function submitPen_(user, rec) {
   v[C.recordKey - 1] = rec.recordKey;
   sh.getRange(row, 1, 1, NCOLS).setValues([v]);
 
-  addLocationIfNew_(rec, user);
   return { ok: true, code: code, changed: changed };
 }
 
 /* ================= client codes ================= */
 
-function getClientConfig_(user) {
+function getPassiveLogConfig_(user) {
   const settings = settings_();
   const locations = rows_(SHEET.locations).filter(r => r[0])
     .map(r => ({ site: String(r[0]), building: String(r[1]), level: String(r[2]), room: String(r[3]), roomNo: Number(r[5]) || 0 }));
@@ -212,9 +222,8 @@ function getClientConfig_(user) {
 /** A client logs a penetration. It lands as "Requested" with no price until we price it. */
 function requestPen_(user, rec) {
   if (!rec || !rec.recordKey || !rec.code) throw new Error('Missing record');
-  if (!rec.site || !rec.building || !rec.level || !rec.room) throw new Error('Location is incomplete');
+  Object.assign(rec, normLoc_(rec, user));
   const sh = sheet_(SHEET.pens);
-  if (!sh.getRange(1, C.clientType).getValue()) sh.getRange(1, C.clientType).setValue('Client pen type');
   const byKey = findRow_(sh, C.recordKey, rec.recordKey);
   if (byKey) return { ok: true, code: sh.getRange(byKey, C.code).getValue(), duplicate: true };
 
@@ -245,7 +254,6 @@ function requestPen_(user, rec) {
   v[C.recordKey - 1] = rec.recordKey;
   v[C.clientType - 1] = String(rec.clientType || '').slice(0, 60);
   sh.getRange(row, 1, 1, NCOLS).setValues([v]);
-  addLocationIfNew_(rec, user);
   return { ok: true, code: code, changed: changed };
 }
 
@@ -727,29 +735,17 @@ function addUser() {
  * To switch a client off, set Active (column D) to No on the Users tab.
  */
 function addClient() {
-  const NAME = 'Client name';
+  const NAME = 'Test Client';
   const EMAIL = 'client@example.com';
   const COMPANY = 'Ventia';
   makeUser_(NAME, EMAIL, 'client', COMPANY);
 }
 
 function makeUser_(NAME, EMAIL, ROLE, COMPANY) {
-
-  const url = String(settings_()['Web app URL'] || '').trim();
-  if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)) {
-    throw new Error('Paste the Web app URL (ends in /exec) into the Settings tab, row "Web app URL", then run addUser again.');
-  }
-  const WORDS = 'ant apple arrow aspen badge banjo basin bear bee birch bison blaze bolt brick cabin cargo cedar chalk cod comet coral crane creek crow dawn deer delta denim dingo dove drift duck eagle echo elk ember emu fern fig flint fox frog galah gecko grove gull gum hare hawk hazel heron honey husky iron ivory ivy jay jetty kayak kelp kite kiwi koala lark laser lemon lilac lime lion lotus lynx mango maple mesa mint moose moss moth nova oak ocean olive onyx opal orbit orca otter owl panda pine pixel plum polar puma quill radar ram raven ray reef ridge river robin ruby sage scout seal shark slate stone storm swan swift tango tiger toad topaz torch tulip turbo umber wolf wren yak yarra zinc'.split(' ');
-  const key = WORDS[Math.floor(Math.random() * WORDS.length)] + String(1000 + Math.floor(Math.random() * 9000));
-  const sh = sheet_(SHEET.users);
-  const data = sh.getDataRange().getValues();
-  let row = -1;
-  for (let i = 1; i < data.length; i++) if (String(data[i][0]).toLowerCase() === NAME.toLowerCase()) { row = i + 1; break; }
-  if (!sh.getRange(1, 6).getValue()) sh.getRange(1, 6, 1, 2).setValues([['Role', 'Company']]);
-  const values = [[NAME, EMAIL, sha256_(key), 'Yes', new Date(), ROLE, COMPANY]];
-  if (row > 0) sh.getRange(row, 1, 1, 7).setValues(values); else sh.appendRow(values[0]);
-
-  Logger.log((ROLE === 'client' ? 'Client setup code for ' : 'Setup code for ') + NAME + ': ' + key);
+  migrate_();
+  const exists = rows_(SHEET.users).some(r => norm_(r[0]) === norm_(NAME));
+  const out = exists ? resetUser_(NAME) : saveUser_({ name: 'editor' }, { isNew: true, name: NAME, email: EMAIL, role: ROLE, company: COMPANY });
+  Logger.log((ROLE === 'client' ? 'Client setup code for ' : 'Setup code for ') + NAME + ': ' + out.code);
 }
 
 /** Run once from the editor to approve Drive, Docs and Sheets permissions. */
@@ -759,4 +755,559 @@ function authorise() {
   ScriptApp.getProjectTriggers(); // lets reports build in the background
   MailApp.getRemainingDailyQuota(); // report-ready emails
   Logger.log('Authorised.');
+}
+
+
+/* =====================================================================
+ * v2.0: users and permissions
+ * Users tab: A Name, B Email, C Code hash, D Active, E Created, F Role, G Company,
+ *            H Passive fire, I Repairs, J SIT, K Sites, L Dashboard
+ * Blank permission cells fall back to the role's preset.
+ * ===================================================================== */
+
+const ROLES = {
+  admin:    { passive: 'full', repairs: 'full', sit: 'edit', dashboard: true },
+  staff:    { passive: 'full', repairs: 'full', sit: 'edit', dashboard: true },
+  client:   { passive: 'log',  repairs: 'none', sit: 'none', dashboard: false },
+  engineer: { passive: 'none', repairs: 'log',  sit: 'edit', dashboard: false },
+};
+const LEVELS = { passive: ['none', 'log', 'full'], repairs: ['none', 'log', 'full'], sit: ['none', 'view', 'edit'] };
+const U = { name: 0, email: 1, hash: 2, active: 3, created: 4, role: 5, company: 6, passive: 7, repairs: 8, sit: 9, sites: 10, dashboard: 11 };
+
+function norm_(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+
+function allSites_() {
+  const out = [];
+  rows_('Buildings').forEach(r => { const s = String(r[0]).trim(); if (s && out.indexOf(s) < 0) out.push(s); });
+  return out.length ? out : ['Austin', 'Repat'];
+}
+
+function userFromRow_(r) {
+  let role = norm_(r[U.role]) || 'admin'; // the first login (Jeff) was made before roles existed
+  if (!ROLES[role]) role = 'staff';
+  const pre = ROLES[role];
+  const lvl = (k) => { const v = norm_(r[U[k]]); return LEVELS[k].indexOf(v) >= 0 ? v : pre[k]; };
+  const all = allSites_();
+  const sitesRaw = String(r[U.sites] || '').split(',').map(x => x.trim()).filter(String);
+  const sites = sitesRaw.length ? all.filter(x => sitesRaw.some(y => norm_(y) === norm_(x))) : all;
+  const dash = norm_(r[U.dashboard]);
+  const admin = role === 'admin';
+  return {
+    name: String(r[U.name]), email: String(r[U.email]), role: role, company: String(r[U.company] || ''),
+    perms: {
+      passive: lvl('passive'), repairs: lvl('repairs'), sit: lvl('sit'), sites: sites, admin: admin,
+      // the dashboard shows money, so only admin and staff can ever have it
+      dashboard: admin || (role === 'staff' && (dash ? dash === 'yes' : pre.dashboard)),
+    },
+  };
+}
+
+function siteOk_(user, site) { return user.perms.sites.some(s => norm_(s) === norm_(site)); }
+
+function newCode_() {
+  const WORDS = 'ant apple arrow aspen badge banjo basin bear bee birch bison blaze bolt brick cabin cargo cedar chalk cod comet coral crane creek crow dawn deer delta denim dingo dove drift duck eagle echo elk ember emu fern fig flint fox frog galah gecko grove gull gum hare hawk hazel heron honey husky iron ivory ivy jay jetty kayak kelp kite kiwi koala lark laser lemon lilac lime lion lotus lynx mango maple mesa mint moose moss moth nova oak ocean olive onyx opal orbit orca otter owl panda pine pixel plum polar puma quill radar ram raven ray reef ridge river robin ruby sage scout seal shark slate stone storm swan swift tango tiger toad topaz torch tulip turbo umber wolf wren yak yarra zinc'.split(' ');
+  const taken = rows_(SHEET.users).map(r => String(r[U.hash]));
+  for (let i = 0; i < 50; i++) {
+    const key = WORDS[Math.floor(Math.random() * WORDS.length)] + String(1000 + Math.floor(Math.random() * 9000));
+    if (taken.indexOf(sha256_(key)) < 0) return key;
+  }
+  throw new Error('Could not make a unique code. Try again.');
+}
+
+function listUsers_() {
+  const users = rows_(SHEET.users).filter(r => r[0]).map(r => {
+    const u = userFromRow_(r);
+    return { name: u.name, email: u.email, role: u.role, company: u.company, active: norm_(r[U.active]) === 'yes',
+      created: r[U.created] instanceof Date ? r[U.created].toISOString() : String(r[U.created] || ''),
+      passive: u.perms.passive, repairs: u.perms.repairs, sit: u.perms.sit, sites: u.perms.sites, dashboard: u.perms.dashboard };
+  });
+  return { ok: true, users: users, sites: allSites_() };
+}
+
+function saveUser_(me, u) {
+  const name = String(u.name || '').trim();
+  if (!name) throw new Error('Enter a name');
+  const role = ROLES[norm_(u.role)] ? norm_(u.role) : 'client';
+  const sh = sheet_(SHEET.users);
+  const data = sh.getDataRange().getValues();
+  let row = -1;
+  for (let i = 1; i < data.length; i++) if (norm_(data[i][0]) === norm_(name)) { row = i + 1; break; }
+  if (u.isNew && row > 0) throw new Error('There is already a login called ' + name + '. Use a different name or edit that one.');
+  if (!u.isNew && row < 0) throw new Error(name + ' not found');
+  if (!u.isNew && norm_(name) === norm_(me.name) && (role !== 'admin' || u.active === false)) throw new Error('You cannot remove your own admin access');
+  const pick = (k) => LEVELS[k].indexOf(norm_(u[k])) >= 0 ? norm_(u[k]) : ROLES[role][k];
+  const all = allSites_();
+  const sites = Array.isArray(u.sites) ? all.filter(x => u.sites.some(y => norm_(y) === norm_(x))) : all;
+  const vals = [role, String(u.company || ''), pick('passive'), pick('repairs'), pick('sit'),
+    sites.length === all.length ? '' : sites.join(', '), role === 'staff' ? (u.dashboard === false ? 'No' : 'Yes') : ''];
+  let code = '';
+  if (u.isNew) {
+    code = newCode_();
+    sh.appendRow([name, String(u.email || ''), sha256_(code), 'Yes', new Date()].concat(vals));
+  } else {
+    sh.getRange(row, U.email + 1).setValue(String(u.email || ''));
+    sh.getRange(row, U.active + 1).setValue(u.active === false ? 'No' : 'Yes');
+    sh.getRange(row, U.role + 1, 1, vals.length).setValues([vals]);
+  }
+  return { ok: true, name: name, code: code };
+}
+
+function resetUser_(name) {
+  const sh = sheet_(SHEET.users);
+  const data = sh.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (norm_(data[i][0]) === norm_(name)) {
+      const code = newCode_();
+      sh.getRange(i + 1, U.hash + 1).setValue(sha256_(code));
+      sh.getRange(i + 1, U.active + 1).setValue('Yes');
+      return { ok: true, name: String(data[i][0]), code: code };
+    }
+  }
+  throw new Error(name + ' not found');
+}
+
+/* =====================================================================
+ * Config: one call, shaped by what the login is allowed to see
+ * ===================================================================== */
+
+function getConfig_(user) {
+  const P = user.perms;
+  let cfg = { ok: true };
+  if (P.passive === 'full') cfg = getPassiveFullConfig_(user);
+  else if (P.passive === 'log') cfg = getPassiveLogConfig_(user);
+  const settings = settings_();
+  const split = (v, d) => String(v || d).split(',').map(x => x.trim()).filter(String);
+  const b = buildingsInfo_();
+  Object.assign(cfg, {
+    ok: true, user: user.name, role: user.role, company: user.company, perms: P, sites: P.sites,
+    buildings: b.codes, buildingNames: b.names,
+    locations: locationsOut_().filter(l => siteOk_(user, l.site)),
+    substrates: split(settings['Substrate options'], 'Plasterboard, Block / brick, Concrete, Other'),
+    clientTypes: split(settings['Client penetration types'], DEFAULT_CLIENT_TYPES),
+    serverTime: new Date().toISOString(),
+  });
+  if (P.passive !== 'full') { delete cfg.rates; delete cfg.access; }
+  if (P.repairs !== 'none') {
+    const full = P.repairs === 'full';
+    cfg.repairs = {
+      level: P.repairs,
+      assets: split(settings['Repair asset types'], DEFAULT_ASSETS),
+      records: rows_(SHEET.repairs).filter(r => r[R.code - 1] && r[R.status - 1] !== 'Removed' && siteOk_(user, r[R.site - 1])
+        && (full || String(r[R.loggedBy - 1]) === user.name)).map(r => repairOut_(r, full)).slice(-2000),
+    };
+  }
+  if (P.sit !== 'none') {
+    cfg.sit = { level: P.sit, tests: rows_(SHEET.sit).filter(r => r[0] && siteOk_(user, r[1])).map(sitOut_) };
+  }
+  return cfg;
+}
+
+/* =====================================================================
+ * Locations: one standard format, with an Unconfirmed flag for anything new
+ * Locations tab: A Site, B Building, C Level, D Room, E Added by, F Room no, G Status
+ * Buildings tab: A Site, B Code, C Notes, D Full name
+ * ===================================================================== */
+
+function buildingsInfo_() {
+  const codes = {}, names = {};
+  rows_('Buildings').forEach(r => {
+    const site = String(r[0]).trim(), code = String(r[1]).trim();
+    if (!site || !code) return;
+    (codes[site] = codes[site] || []).push(code);
+    if (r[3]) names[site + '|' + code] = String(r[3]).trim();
+  });
+  return { codes: codes, names: names };
+}
+
+function locationsOut_() {
+  return rows_(SHEET.locations).filter(r => r[0]).map(r => ({
+    site: String(r[0]), building: String(r[1]), level: String(r[2]), room: String(r[3]),
+    addedBy: String(r[4] || ''), roomNo: Number(r[5]) || 0, status: String(r[6] || 'Confirmed'),
+  }));
+}
+
+function normLevel_(v) {
+  let s = String(v || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  if (!s) return '';
+  let m;
+  if ((m = s.match(/^(?:LEVEL|LVL|LEV|L)\s*-?\s*(\d+)$/)) || (m = s.match(/^(\d+)$/))) return 'L' + Number(m[1]);
+  if ((m = s.match(/^(?:BASEMENT|BSMT|B)\s*-?\s*(\d+)$/))) return 'B' + Number(m[1]);
+  if (/^(G|GF|GROUND|GROUND FLOOR|LEVEL G|L0|LEVEL 0)$/.test(s)) return 'G';
+  if (/^(LG|LOWER GROUND)$/.test(s)) return 'LG';
+  if (/^(UG|UPPER GROUND)$/.test(s)) return 'UG';
+  if (/^(RF|ROOF|ROOFTOP)$/.test(s)) return 'Roof';
+  if (/^(MEZZ|MEZZANINE)$/.test(s)) return 'Mezz';
+  return s.replace(/[^A-Z0-9 ]/g, '');
+}
+
+function normRoom_(v) {
+  return String(v || '').trim().replace(/\s+/g, ' ').split(' ').map(w => {
+    if (/^[A-Z]{2,3}$/.test(w) || /\d/.test(w)) return w.toUpperCase(); // ICU, MRI, 4B stay as written
+    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+  }).join(' ');
+}
+
+function normBuilding_(site, v) {
+  const raw = String(v || '').trim().replace(/\s+/g, ' ');
+  const info = buildingsInfo_();
+  const codes = info.codes[site] || [];
+  const hit = codes.find(c => norm_(c) === norm_(raw) || norm_(info.names[site + '|' + c]) === norm_(raw));
+  if (hit) return { building: hit, known: true };
+  return { building: raw.length <= 6 && raw.indexOf(' ') < 0 ? raw.toUpperCase() : normRoom_(raw), known: false };
+}
+
+/** Standardise a submitted location, add it to the Locations tab if new, and say whether it is confirmed. */
+function normLoc_(rec, user) {
+  const sites = allSites_();
+  const site = sites.find(x => norm_(x) === norm_(rec.site));
+  if (!site) throw new Error('Unknown site ' + rec.site);
+  if (!siteOk_(user, site)) throw new Error('Your login is not set up for ' + site);
+  const b = normBuilding_(site, rec.building);
+  const loc = { site: site, building: b.building, level: normLevel_(rec.level), room: normRoom_(rec.room) };
+  if (!loc.building || !loc.level || !loc.room) throw new Error('Location is incomplete');
+  const key = l => [l.site, l.building, l.level, l.room].map(norm_).join('|');
+  const existing = locationsOut_().find(l => key(l) === key(loc));
+  if (existing) return { site: existing.site, building: existing.building, level: existing.level, room: existing.room, locStatus: existing.status };
+  const trusted = user.perms.admin || user.role === 'staff';
+  const status = b.known && trusted ? 'Confirmed' : 'Unconfirmed';
+  ensureCols_(sheet_(SHEET.locations), 7);
+  sheet_(SHEET.locations).appendRow([loc.site, loc.building, loc.level, loc.room, user.name, Number(rec.roomNo) || '', status]);
+  loc.locStatus = status;
+  return loc;
+}
+
+/**
+ * Tidy a location: every job at `from` is moved to `to`, `from` disappears from the list,
+ * and `to` becomes a confirmed location (created if new). Tag codes never change.
+ */
+function locResolve_(user, from, to, buildingName) {
+  if (!from || !to) throw new Error('Missing location');
+  const site = allSites_().find(x => norm_(x) === norm_(to.site));
+  if (!site) throw new Error('Unknown site');
+  const b = normBuilding_(site, to.building);
+  const t = { site: site, building: b.building, level: normLevel_(to.level), room: normRoom_(to.room) };
+  if (!t.building || !t.level || !t.room) throw new Error('Fill in building, level and room');
+  if (!b.known) buildingSave_(site, t.building, buildingName || '');
+  const same = (r, i) => norm_(r[i]) === norm_(from.site) && norm_(r[i + 1]) === norm_(from.building) && norm_(r[i + 2]) === norm_(from.level) && norm_(r[i + 3]) === norm_(from.room);
+  let moved = 0;
+  [[SHEET.pens, C.site], [SHEET.repairs, R.site]].forEach(([name, col]) => {
+    const sh = sheet_(name);
+    const data = sh.getDataRange().getValues();
+    for (let i = 1; i < data.length; i++) {
+      if (same(data[i], col - 1)) { sh.getRange(i + 1, col, 1, 4).setValues([[t.site, t.building, t.level, t.room]]); moved++; }
+    }
+  });
+  const sh = sheet_(SHEET.locations);
+  ensureCols_(sh, 7);
+  const data = sh.getDataRange().getValues();
+  let target = -1;
+  for (let i = data.length - 1; i >= 1; i--) {
+    const r = data[i];
+    if (same(r, 0) && !(norm_(r[1]) === norm_(t.building) && norm_(r[2]) === norm_(t.level) && norm_(r[3]) === norm_(t.room))) { sh.deleteRow(i + 1); continue; }
+    if (norm_(r[0]) === norm_(t.site) && norm_(r[1]) === norm_(t.building) && norm_(r[2]) === norm_(t.level) && norm_(r[3]) === norm_(t.room)) target = i + 1;
+  }
+  if (target > 0) sh.getRange(target, 1, 1, 4).setValues([[t.site, t.building, t.level, t.room]]);
+  if (target > 0) sh.getRange(target, 7).setValue('Confirmed');
+  else sh.appendRow([t.site, t.building, t.level, t.room, user.name, '', 'Confirmed']);
+  dropDashCache_();
+  return { ok: true, moved: moved, to: t };
+}
+
+function buildingSave_(site, code, name) {
+  site = allSites_().find(x => norm_(x) === norm_(site)) || String(site || '').trim();
+  code = String(code || '').trim();
+  if (!site || !code) throw new Error('Enter the site and building code');
+  const sh = sheet_('Buildings');
+  ensureCols_(sh, 4);
+  const data = sh.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (norm_(data[i][0]) === norm_(site) && norm_(data[i][1]) === norm_(code)) {
+      if (name !== undefined && name !== null) sh.getRange(i + 1, 4).setValue(String(name).trim());
+      return { ok: true };
+    }
+  }
+  sh.appendRow([site, code, '', String(name || '').trim()]);
+  return { ok: true };
+}
+
+/* =====================================================================
+ * Fire repairs (separate tab, separate revenue)
+ * ===================================================================== */
+
+const R = { code: 1, loggedAt: 2, loggedBy: 3, site: 4, building: 5, level: 6, room: 7, location: 8, asset: 9, defect: 10,
+  priority: 11, price: 12, status: 13, vp: 14, before: 15, after: 16, doneDate: 17, doneBy: 18, notes: 19, recordKey: 20, qty: 21 };
+const RCOLS = 21;
+const REPAIR_STATUSES = ['Logged', 'Quoted', 'PO Received', 'Done', 'Invoiced'];
+const DEFAULT_ASSETS = 'Fire door, Door hardware / closer, Sprinkler, Hydrant, Hose reel, Extinguisher, Exit / emergency light, Fire damper, Detector, Fire panel, Other';
+
+function plainRepairStatus_(s) {
+  return s === 'Logged' ? 'Received' : s === 'Quoted' ? 'Quoted' : s === 'PO Received' ? 'Approved' : (s === 'Done' || s === 'Invoiced') ? 'Fixed' : s;
+}
+
+function repairOut_(r, full) {
+  const d = v => (v instanceof Date ? v.toISOString() : String(v || ''));
+  const first = v => String(v || '').split('\n')[0];
+  const o = {
+    code: String(r[R.code - 1]), loggedAt: d(r[R.loggedAt - 1]), loggedBy: String(r[R.loggedBy - 1]),
+    site: String(r[R.site - 1]), building: String(r[R.building - 1]), level: String(r[R.level - 1]), room: String(r[R.room - 1]),
+    location: String(r[R.location - 1]), asset: String(r[R.asset - 1]), defect: String(r[R.defect - 1]), priority: String(r[R.priority - 1]),
+    qty: Number(r[R.qty - 1]) || 1, before: first(r[R.before - 1]), after: first(r[R.after - 1]),
+    doneDate: d(r[R.doneDate - 1]),
+  };
+  if (full) Object.assign(o, { price: Number(r[R.price - 1]) || 0, status: String(r[R.status - 1]), vp: String(r[R.vp - 1]), notes: String(r[R.notes - 1]), doneBy: String(r[R.doneBy - 1]) });
+  else o.status = plainRepairStatus_(String(r[R.status - 1]));
+  return o;
+}
+
+function repairLog_(user, rec) {
+  if (!rec || !rec.recordKey || !rec.code) throw new Error('Missing record');
+  if (!rec.asset || !String(rec.defect || '').trim()) throw new Error('Pick the item and describe the fault');
+  Object.assign(rec, normLoc_(rec, user));
+  const sh = sheet_(SHEET.repairs);
+  const byKey = findRow_(sh, R.recordKey, rec.recordKey);
+  if (byKey) return { ok: true, code: sh.getRange(byKey, R.code).getValue(), duplicate: true };
+  let code = String(rec.code).toUpperCase().replace(/[^A-Z0-9.\-]/g, ''), changed = false;
+  if (findRow_(sh, R.code, code)) {
+    const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    for (let i = 0; i < letters.length; i++) if (!findRow_(sh, R.code, code + letters[i])) { code += letters[i]; changed = true; break; }
+  }
+  const folder = locationFolder_(rec.site, rec.building, rec.level, rec.room);
+  const photos = savePhotos_(folder, code, 'repair', (rec.photos || []).slice(0, 3));
+  const full = user.perms.repairs === 'full';
+  const row = sh.getLastRow() + 1;
+  const v = new Array(RCOLS).fill('');
+  v[R.code - 1] = code; v[R.loggedAt - 1] = rec.capturedAt ? new Date(rec.capturedAt) : new Date(); v[R.loggedBy - 1] = user.name;
+  v[R.site - 1] = rec.site; v[R.building - 1] = rec.building; v[R.level - 1] = rec.level; v[R.room - 1] = rec.room;
+  v[R.location - 1] = '=E' + row + '&" "&F' + row + '&" - "&G' + row;
+  v[R.asset - 1] = String(rec.asset).slice(0, 60); v[R.defect - 1] = String(rec.defect).slice(0, 1000);
+  v[R.priority - 1] = ['Urgent', 'Soon', 'Routine'].indexOf(rec.priority) >= 0 ? rec.priority : 'Routine';
+  v[R.qty - 1] = Math.max(1, Math.min(99, Number(rec.qty) || 1));
+  v[R.price - 1] = full && Number(rec.price) > 0 ? Number(rec.price) : '';
+  v[R.status - 1] = 'Logged';
+  v[R.before - 1] = photos.join('\n');
+  v[R.notes - 1] = (full ? '' : 'Logged by ' + user.name + (user.company ? ' (' + user.company + ')' : '') + '. ') + String(rec.notes || '').slice(0, 500);
+  v[R.recordKey - 1] = rec.recordKey;
+  sh.getRange(row, 1, 1, RCOLS).setValues([v]);
+  dropDashCache_();
+  return { ok: true, code: code, changed: changed };
+}
+
+function repairUpdate_(user, rec) {
+  const sh = sheet_(SHEET.repairs);
+  const row = findRow_(sh, R.code, rec && rec.code);
+  if (!row) throw new Error('Repair ' + (rec && rec.code) + ' not found');
+  const status = String(sh.getRange(row, R.status).getValue());
+  if (status === 'Invoiced') throw new Error(rec.code + ' is invoiced and can only be changed in the sheet');
+  if (rec.remove) {
+    sh.getRange(row, R.status).setValue('Removed');
+    appendLines_(sh, row, R.notes, ['Removed by ' + user.name + ' ' + Utilities.formatDate(new Date(), 'Australia/Melbourne', 'd/M/yy')]);
+    dropDashCache_();
+    return { ok: true, code: rec.code, removed: true };
+  }
+  const f = rec.fields || {};
+  const set = (col, val) => { if (val !== undefined) sh.getRange(row, col).setValue(val); };
+  set(R.asset, f.asset); set(R.defect, f.defect); set(R.priority, f.priority); set(R.notes, f.notes); set(R.vp, f.vp);
+  if (f.qty !== undefined) set(R.qty, Math.max(1, Number(f.qty) || 1));
+  if (f.price !== undefined) set(R.price, Number(f.price) || '');
+  if (f.status !== undefined && REPAIR_STATUSES.indexOf(f.status) >= 0) set(R.status, f.status);
+  const r = sh.getRange(row, 1, 1, RCOLS).getValues()[0];
+  const folder = locationFolder_(r[R.site - 1], r[R.building - 1], r[R.level - 1], r[R.room - 1]);
+  if (rec.photos && rec.photos.length) appendLines_(sh, row, R.before, savePhotos_(folder, rec.code, 'repair', rec.photos));
+  if (rec.afterPhotos && rec.afterPhotos.length) appendLines_(sh, row, R.after, savePhotos_(folder, rec.code, 'after', rec.afterPhotos));
+  dropDashCache_();
+  return { ok: true, code: rec.code };
+}
+
+function repairDone_(user, rec) {
+  const sh = sheet_(SHEET.repairs);
+  const row = findRow_(sh, R.code, rec && rec.code);
+  if (!row) throw new Error('Repair ' + (rec && rec.code) + ' not found');
+  const status = String(sh.getRange(row, R.status).getValue());
+  if (status === 'Done' || status === 'Invoiced') return { ok: true, duplicate: true };
+  const r = sh.getRange(row, 1, 1, RCOLS).getValues()[0];
+  const folder = locationFolder_(r[R.site - 1], r[R.building - 1], r[R.level - 1], r[R.room - 1]);
+  appendLines_(sh, row, R.after, savePhotos_(folder, rec.code, 'after', rec.photos || []));
+  sh.getRange(row, R.status).setValue('Done');
+  sh.getRange(row, R.doneDate).setValue(rec.capturedAt ? new Date(rec.capturedAt) : new Date());
+  sh.getRange(row, R.doneBy).setValue(user.name);
+  if (rec.notes) appendLines_(sh, row, R.notes, ['Done: ' + rec.notes]);
+  dropDashCache_();
+  return { ok: true, code: rec.code };
+}
+
+/* =====================================================================
+ * SIT (system interface tests). Placeholder: a register of tests.
+ * Full report and matrix come after the first test.
+ * ===================================================================== */
+
+const SIT_COLS = ['ID', 'Site', 'Building', 'Test date', 'Engineer', 'Status', 'Report link', 'Notes', 'Created by', 'Updated'];
+const SIT_STATUSES = ['Planned', 'In progress', 'Report due', 'Complete'];
+
+function sitOut_(r) {
+  return { id: String(r[0]), site: String(r[1]), building: String(r[2]),
+    date: r[3] instanceof Date ? Utilities.formatDate(r[3], 'Australia/Melbourne', 'yyyy-MM-dd') : String(r[3] || ''),
+    engineer: String(r[4]), status: String(r[5] || 'Planned'), report: String(r[6] || ''), notes: String(r[7] || ''), createdBy: String(r[8] || '') };
+}
+
+function sitSave_(user, t) {
+  if (!t || !t.site || !t.building) throw new Error('Pick the site and building');
+  if (!siteOk_(user, t.site)) throw new Error('Your login is not set up for ' + t.site);
+  const sh = sheet_(SHEET.sit);
+  const vals = [t.site, normBuilding_(t.site, t.building).building, t.date ? new Date(t.date) : '', String(t.engineer || ''),
+    SIT_STATUSES.indexOf(t.status) >= 0 ? t.status : 'Planned', String(t.report || ''), String(t.notes || '').slice(0, 1000)];
+  const row = t.id ? findRow_(sh, 1, t.id) : 0;
+  if (row) {
+    sh.getRange(row, 2, 1, vals.length).setValues([vals]);
+    sh.getRange(row, 10).setValue(new Date());
+    return { ok: true, id: t.id };
+  }
+  const id = t.id || ('SIT-' + Utilities.formatDate(new Date(), 'Australia/Melbourne', 'yyMMdd') + '-' + (10 + Math.floor(Math.random() * 90)));
+  sh.appendRow([id].concat(vals).concat([user.name, new Date()]));
+  return { ok: true, id: id };
+}
+
+/* =====================================================================
+ * Dashboard (back office). Cached for 2 minutes; changes clear the cache.
+ * ===================================================================== */
+
+function dropDashCache_() {
+  const c = CacheService.getScriptCache();
+  c.removeAll(['DASH_'].concat(allSites_().map(s => 'DASH_' + s)));
+}
+
+function money_(v) { return typeof v === 'number' ? v : Number(String(v || '').replace(/[^0-9.\-]/g, '')) || 0; }
+
+function dashboard_(user, site) {
+  if (site && !siteOk_(user, site)) site = '';
+  const allowed = s => (site ? norm_(s) === norm_(site) : siteOk_(user, s));
+  const key = 'DASH_' + site;
+  const cache = CacheService.getScriptCache();
+  const hit = user.perms.sites.length === allSites_().length ? cache.get(key) : null;
+  if (hit) return JSON.parse(hit);
+
+  const s = settings_();
+  const monthMin = Number(s['Monthly target minimum ($ ex GST)']) || 12000;
+  const monthMax = Number(s['Monthly target maximum ($ ex GST)']) || 13000;
+  const thisMonth = Utilities.formatDate(new Date(), 'Australia/Melbourne', 'yyyy-MM');
+
+  // passive fire penetrations
+  const pens = rows_(SHEET.pens).filter(r => r[C.code - 1] && r[C.status - 1] !== 'Removed' && allowed(r[C.site - 1]));
+  const pStatus = {}, byBuilding = {};
+  let bank = 0, bankN = 0, requested = 0;
+  pens.forEach(r => {
+    const st = String(r[C.status - 1]), v = Number(r[C.price - 1]) || 0;
+    (pStatus[st] = pStatus[st] || { n: 0, v: 0 }).n++; pStatus[st].v += v;
+    if (st === 'Scouted') { bank += v; bankN++; }
+    if (st === 'Requested') requested++;
+    const bk = r[C.site - 1] + ' · ' + r[C.building - 1];
+    const b = (byBuilding[bk] = byBuilding[bk] || { site: String(r[C.site - 1]), building: String(r[C.building - 1]), bank: 0, open: 0, done: 0, n: 0 });
+    b.n++;
+    if (st === 'Scouted') b.bank += v; else if (OPEN_STATUSES.indexOf(st) >= 0) b.open += v; else if (st === 'Done' || st === 'Invoiced') b.done += v;
+  });
+
+  // POs (history and planned months)
+  const pos = rows_(SHEET.pos).filter(r => r[0] && allowed(r[1])).map(r => ({
+    month: String(r[0]).replace(/^'/, ''), site: String(r[1]), location: String(r[2]), vp: String(r[3]),
+    value: money_(r[5]), status: String(r[6] || ''), wo: String(r[7] || ''),
+  }));
+  const months = {};
+  pos.forEach(p => {
+    const m = (months[p.month] = months[p.month] || { month: p.month, done: 0, open: 0, n: 0 });
+    m.n++;
+    if (p.status === 'Done' || p.status === 'Invoiced') m.done += p.value; else m.open += p.value;
+  });
+  const monthList = Object.keys(months).sort().map(k => months[k]);
+  const plannedAhead = monthList.filter(m => m.month >= thisMonth && m.open > 0);
+  const poStatus = {};
+  pos.forEach(p => { (poStatus[p.status] = poStatus[p.status] || { n: 0, v: 0 }).n++; poStatus[p.status].v += p.value; });
+
+  // repairs
+  const reps = rows_(SHEET.repairs).filter(r => r[R.code - 1] && r[R.status - 1] !== 'Removed' && allowed(r[R.site - 1]));
+  const rStatus = {};
+  let toPrice = 0;
+  reps.forEach(r => {
+    const st = String(r[R.status - 1]), v = Number(r[R.price - 1]) || 0;
+    (rStatus[st] = rStatus[st] || { n: 0, v: 0 }).n++; rStatus[st].v += v;
+    if (st === 'Logged' && !v) toPrice++;
+  });
+
+  const unconfirmed = locationsOut_().filter(l => l.status === 'Unconfirmed' && allowed(l.site)).length;
+  const plan = SpreadsheetApp.getActive().getSheetByName('Monthly Plan');
+  const planRows = plan ? plan.getDataRange().getDisplayValues() : [];
+
+  const out = {
+    ok: true, site: site, thisMonth: thisMonth, monthMin: monthMin, monthMax: monthMax,
+    passive: {
+      bank: bank, bankN: bankN, bankMonths: bank / monthMin, plannedMonths: plannedAhead.length,
+      plannedValue: plannedAhead.reduce((a, m) => a + m.open, 0),
+      monthsAhead: plannedAhead.length + bank / monthMin,
+      penStatus: pStatus, poStatus: poStatus, months: monthList,
+      buildings: Object.keys(byBuilding).sort().map(k => byBuilding[k]),
+    },
+    repairs: { status: rStatus, toPrice: toPrice, n: reps.length },
+    todo: { requested: requested, unconfirmed: unconfirmed, repairsToPrice: toPrice },
+    pos: pos, planRows: planRows, nextMonth: nextUnplannedMonth_(), serverTime: new Date().toISOString(),
+  };
+  if (!hit && user.perms.sites.length === allSites_().length) {
+    const str = JSON.stringify(out);
+    if (str.length < 90000) cache.put(key, str, 120);
+  }
+  return out;
+}
+
+/* =====================================================================
+ * One-off upgrade of the sheet for v2. Runs itself on the first request.
+ * ===================================================================== */
+
+function ensureCols_(sh, n) { if (sh.getMaxColumns() < n) sh.insertColumnsAfter(sh.getMaxColumns(), n - sh.getMaxColumns()); }
+
+function ensureSheet_(name, headers) {
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(name);
+  if (!sh) {
+    sh = ss.insertSheet(name);
+    sh.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  ensureCols_(sh, headers.length);
+  return sh;
+}
+
+function migrate_() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('SCHEMA') === '2') return;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    if (props.getProperty('SCHEMA') === '2') return;
+    const users = sheet_(SHEET.users);
+    ensureCols_(users, 12);
+    users.getRange(1, 6, 1, 7).setValues([['Role', 'Company', 'Passive fire', 'Repairs', 'SIT', 'Sites', 'Dashboard']]).setFontWeight('bold');
+    const ud = users.getDataRange().getValues();
+    for (let i = 1; i < ud.length; i++) if (ud[i][0] && !String(ud[i][5]).trim()) users.getRange(i + 1, 6).setValue('admin');
+
+    const pens = sheet_(SHEET.pens);
+    ensureCols_(pens, 29);
+    if (!pens.getRange(1, 29).getValue()) pens.getRange(1, 29).setValue('Client pen type').setFontWeight('bold');
+
+    const locs = sheet_(SHEET.locations);
+    ensureCols_(locs, 7);
+    locs.getRange(1, 7).setValue('Status').setFontWeight('bold');
+    const ld = locs.getDataRange().getValues();
+    for (let i = 1; i < ld.length; i++) if (ld[i][0] && !String(ld[i][6]).trim()) locs.getRange(i + 1, 7).setValue('Confirmed');
+
+    const bsh = sheet_('Buildings');
+    ensureCols_(bsh, 4);
+    bsh.getRange(1, 4).setValue('Full name').setFontWeight('bold');
+    const known = rows_('Buildings').map(r => norm_(r[0]) + '|' + norm_(r[1]));
+    rows_(SHEET.locations).forEach(r => {
+      const k = norm_(r[0]) + '|' + norm_(r[1]);
+      if (r[0] && r[1] && known.indexOf(k) < 0) { bsh.appendRow([String(r[0]), String(r[1]), '', '']); known.push(k); }
+    });
+
+    ensureSheet_(SHEET.repairs, ['Code', 'Logged at', 'Logged by', 'Site', 'Building', 'Level', 'Room / Area', 'Location', 'Item',
+      'Fault', 'Priority', 'Price ($ ex GST)', 'Status', 'Quote / VP', 'Before photos', 'After photos', 'Done date', 'Done by', 'Notes', 'Record key', 'Qty']);
+    ensureSheet_(SHEET.sit, SIT_COLS);
+    props.setProperty('SCHEMA', '2');
+  } finally { lock.releaseLock(); }
 }

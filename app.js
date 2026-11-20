@@ -1,13 +1,12 @@
 /* Frontline Compliance and Fire - passive fire app (offline-first PWA) */
 'use strict';
 
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '2.0.0';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
-const LS = { setup: 'pf_setup', config: 'pf_config', loc: 'pf_loc', draft: 'pf_draft', localLocs: 'pf_local_locs' };
+const LS = { setup: 'pf_setup', config: 'pf_config', loc: 'pf_loc', draft: 'pf_draft', localLocs: 'pf_local_locs', area: 'pf_area', rdraft: 'pf_rdraft' };
 const FACES = ['Wall', 'Floor', 'Ceiling / slab'];
-const SITES = ['Austin', 'Repat'];
 const DEFAULT_BUILDINGS = { Austin: ['AT', 'HSB', 'LTB'], Repat: ['NW', 'Cent', 'CPU', 'Coral'] };
-const OTHER = 'Other…';
+const OTHER = 'Not listed…';
 const OPEN = ['Allocated', 'Quoted', 'PO Received'];
 const PRICE_EDITABLE = ['Requested', 'Scouted', 'Allocated'];
 const MAX_PHOTO_PX = 1600;
@@ -70,6 +69,7 @@ const state = {
   doneJob: null,
   edit: null,
   search: '',
+  area: store.get(LS.area, null),
 };
 
 function freshDraft(keep) {
@@ -106,7 +106,31 @@ function buildingList(site) {
   const b = state.config && state.config.buildings && state.config.buildings[site];
   return (b && b.length) ? b : (DEFAULT_BUILDINGS[site] || []);
 }
-const isClient = () => !!(state.config && state.config.role === 'client');
+const perms = () => (state.config && state.config.perms) || { passive: state.config && state.config.role === 'client' ? 'log' : 'full', repairs: 'none', sit: 'none', dashboard: false, admin: false };
+const passiveLevel = () => perms().passive;
+const isClient = () => passiveLevel() === 'log';
+const sitesList = () => (state.config && state.config.sites && state.config.sites.length) ? state.config.sites : ['Austin', 'Repat'];
+function buildingName(site, code) { const n = state.config && state.config.buildingNames; return (n && n[site + '|' + code]) || ''; }
+
+/* Locations are saved in one standard format: L5, B1, G, Roof; rooms in normal capitals. (Same rules as the server.) */
+function normLevel(v) {
+  const s = String(v || '').trim().toUpperCase().replace(/\s+/g, ' ');
+  if (!s) return '';
+  let m;
+  if ((m = s.match(/^(?:LEVEL|LVL|LEV|L)\s*-?\s*(\d+)$/)) || (m = s.match(/^(\d+)$/))) return 'L' + Number(m[1]);
+  if ((m = s.match(/^(?:BASEMENT|BSMT|B)\s*-?\s*(\d+)$/))) return 'B' + Number(m[1]);
+  if (/^(G|GF|GROUND|GROUND FLOOR|LEVEL G|L0|LEVEL 0)$/.test(s)) return 'G';
+  if (/^(LG|LOWER GROUND)$/.test(s)) return 'LG';
+  if (/^(UG|UPPER GROUND)$/.test(s)) return 'UG';
+  if (/^(RF|ROOF|ROOFTOP)$/.test(s)) return 'Roof';
+  if (/^(MEZZ|MEZZANINE)$/.test(s)) return 'Mezz';
+  return s.replace(/[^A-Z0-9 ]/g, '');
+}
+function normRoom(v) {
+  return String(v || '').trim().replace(/\s+/g, ' ').split(' ').map(w =>
+    (/^[A-Z]{2,3}$/.test(w) || /\d/.test(w)) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+}
+function normBuildingText(v) { const r = String(v || '').trim().replace(/\s+/g, ' '); return r.length <= 6 && r.indexOf(' ') < 0 ? r.toUpperCase() : normRoom(r); }
 function clientTypes() { return (state.config && state.config.clientTypes) || ['Cables', 'Cable tray', 'Metal pipe', 'Plastic pipe', 'Duct', 'Other']; }
 function rates() { return (state.config && state.config.rates) || []; }
 function accessOpts() { return (state.config && state.config.access && state.config.access.length) ? state.config.access : [{ name: 'Standard (floor level)', loading: 0, extra: 0 }]; }
@@ -195,6 +219,7 @@ $('#camera').addEventListener('change', async e => {
   try {
     const data = await compressImage(file);
     const t = state.photoTarget;
+    if (typeof t === 'function') { t(data); return; }
     if (t === 'done' && state.doneJob) { state.doneJob.photo = data; renderDone(); return; }
     if (t === 'editBefore' && state.edit) { state.edit.newBefore = data; render(); return; }
     if (t === 'editAfter' && state.edit) { state.edit.newAfter = data; render(); return; }
@@ -270,7 +295,7 @@ function updateHeader() {
   const btn = $('#syncBtn');
   btn.textContent = state.syncing ? 'Syncing…' : (n ? `Sync ${n}` : 'Synced');
   btn.className = n ? '' : 'idle';
-  const b = $('#qBadge'); b.textContent = n; b.classList.toggle('hidden', !n);
+  const b = $('#qBadge'); if (b) { b.textContent = n; b.classList.toggle('hidden', !n); }
   $('#net').textContent = navigator.onLine ? '' : 'Offline';
 }
 
@@ -284,35 +309,117 @@ function go(screen, tab) {
 $('#syncBtn').addEventListener('click', () => sync());
 window.addEventListener('online', () => { updateHeader(); sync(); });
 window.addEventListener('offline', updateHeader);
-$$('nav button').forEach(b => b.addEventListener('click', () => go(b.dataset.tab, b.dataset.tab)));
+$('#nav').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) go(b.dataset.tab, b.dataset.tab); });
+$('#areaBtn').addEventListener('click', () => { if (state.queue.length && !navigator.onLine) toast('Items still waiting to sync. They\'ll upload when you have signal.'); state.area = null; store.set(LS.area, null); render(); });
 
 /* ---------------- render ---------------- */
 
+/* Areas: the start screen shows the ones this login can use. Once in an area the app stays there. */
+const AREAS = {
+  passive: { name: 'Passive fire', sub: 'Penetrations', icon: 'wall' },
+  repairs: { name: 'Fire repairs', sub: 'Doors, sprinklers, hydrants and more', icon: 'door' },
+  sit: { name: 'SIT', sub: 'System interface tests', icon: 'list' },
+  office: { name: 'Back office', sub: 'Dashboard, planning, locations, users', icon: 'chart' },
+};
+function areasAllowed() {
+  const p = perms(), out = [];
+  if (p.passive && p.passive !== 'none') out.push('passive');
+  if (p.repairs && p.repairs !== 'none') out.push('repairs');
+  if (p.sit && p.sit !== 'none') out.push('sit');
+  if (p.dashboard || p.admin) out.push('office');
+  return out;
+}
+function navFor(area) {
+  if (area === 'passive') return [['home', 'Home'], ['browse', isClient() ? 'My requests' : 'Find'], ['queue', 'Waiting']];
+  if (area === 'repairs') return [['rhome', 'Home'], ['rfind', perms().repairs === 'log' ? 'My repairs' : 'Find'], ['queue', 'Waiting']];
+  if (area === 'sit') return [['sit', 'Tests'], ['queue', 'Waiting']];
+  if (area === 'office') return [['dash', 'Dashboard'], ['plan', 'Plan'], ['locs', 'Locations'], ['users', 'Users'], ['history', 'History']].filter(t => perms().admin || t[0] === 'dash' || t[0] === 'history');
+  return [];
+}
+function homeOf(area) { return navFor(area)[0][0]; }
+function enterArea(area) {
+  state.area = area; store.set(LS.area, area);
+  state.screen = homeOf(area); state.tab = state.screen;
+  render(); window.scrollTo(0, 0);
+}
+
+/* Every area registers its screens here: VIEWS[area][screen] = [render, bind]. 'loc' and 'queue' are shared. */
+const VIEWS = {};
+
 function render() {
   const main = $('#main');
-  if (!state.setup) { $('#nav').classList.add('hidden'); main.innerHTML = renderSetup(); bindSetup(); return; }
-  $('#nav').classList.remove('hidden');
-  if (!state.config) { main.innerHTML = `<div class="card"><h2>Loading</h2><p>Connecting to the master sheet…</p><button class="big" id="retry">Try again</button></div>`; $('#retry').onclick = () => refreshConfig(); return; }
-  const navB = $('nav [data-tab="browse"]');
-  navB.textContent = isClient() ? 'My requests' : 'Find';
-  if (isClient()) {
-    const cv = { home: [renderClientHome, bindClientHome], loc: [renderLoc, bindLoc], peno: [renderClientPeno, bindClientPeno],
-      saved: [renderClientSaved, bindClientSaved], browse: [renderClientList, bindClientList], queue: [renderQueue, bindQueue] };
-    const [cr, cb] = cv[state.screen] || cv.home;
-    main.innerHTML = cr(); cb(); updateHeader(); return;
+  const nav = $('#nav'), areaBtn = $('#areaBtn');
+  document.body.classList.toggle('wide', state.area === 'office');
+  if (!state.setup) { nav.classList.add('hidden'); areaBtn.classList.add('hidden'); main.innerHTML = renderSetup(); bindSetup(); return; }
+  if (!state.config) { nav.classList.add('hidden'); main.innerHTML = `<div class="card"><h2>Loading</h2><p>Connecting to Frontline…</p><button class="big" id="retry">Try again</button></div>`; $('#retry').onclick = () => refreshConfig(); return; }
+  const allowed = areasAllowed();
+  if (state.area && !allowed.includes(state.area)) state.area = null;
+  if (!state.area && allowed.length === 1) { state.area = allowed[0]; state.screen = homeOf(state.area); }
+  if (!state.area) {
+    nav.classList.add('hidden'); areaBtn.classList.add('hidden');
+    main.innerHTML = renderStart(allowed); bindStart(); updateHeader(); return;
   }
-  const views = { requests: [renderRequests, bindRequests], home: [renderHome, bindHome], loc: [renderLoc, bindLoc], peno: [renderPeno, bindPeno], saved: [renderSaved, bindSaved],
-    jobs: [renderJobs, bindJobs], browse: [renderBrowse, bindBrowse], edit: [renderEdit, bindEdit], queue: [renderQueue, bindQueue] };
-  const [r, b] = views[state.screen] || views.home;
+  // header: which area, tap to switch
+  areaBtn.classList.toggle('hidden', allowed.length < 2);
+  areaBtn.textContent = AREAS[state.area].name + ' ▾';
+  areaBtn.dataset.area = state.area;
+  const tabs = navFor(state.area);
+  const key = tabs.map(t => t.join(':')).join('|');
+  if (nav.dataset.key !== key) {
+    nav.innerHTML = tabs.map(([t, l]) => `<button data-tab="${t}">${esc(l)}${t === 'queue' ? ' <span id="qBadge" class="badge hidden">0</span>' : ''}</button>`).join('');
+    nav.dataset.key = key;
+  }
+  nav.classList.remove('hidden');
+  const known = Object.assign({}, VIEWS[state.area] || {}, { loc: [renderLoc, bindLoc], queue: [renderQueue, bindQueue] });
+  if (!known[state.screen]) { state.screen = homeOf(state.area); state.tab = state.screen; }
+  $$('nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === state.tab));
+  const [r, b] = known[state.screen];
   main.innerHTML = r(); b();
   updateHeader();
 }
 
+/* ---- start screen ---- */
+
+const AREA_ICONS = {
+  wall: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 9.5h18M3 15h18M9 4v5.5M15 9.5V15M9 15v5"/><circle cx="15" cy="17.5" r="1.3" fill="currentColor"/></svg>',
+  door: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M5 21V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17"/><path d="M3 21h18"/><circle cx="15.5" cy="12.5" r="1.2" fill="currentColor"/></svg>',
+  list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.2 1.2L7 4.8M3.5 12l1.2 1.2L7 10.8M3.5 18l1.2 1.2L7 16.8"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>',
+};
+
+function areaStat(a) {
+  const c = state.config;
+  if (a === 'passive') {
+    if (isClient()) { const n = records().filter(r => r.status !== 'Fixed').length; return n ? `${n} open request${n === 1 ? '' : 's'}` : AREAS[a].sub; }
+    const bank = records().filter(r => r.status === 'Scouted').reduce((t, r) => t + r.price, 0);
+    const req = records().filter(r => r.status === 'Requested').length;
+    return `${money(bank)} in the bank${req ? ` · ${req} client request${req === 1 ? '' : 's'}` : ''}`;
+  }
+  if (a === 'repairs' && c.repairs) {
+    const recs = c.repairs.records;
+    if (c.repairs.level === 'log') { const n = recs.filter(r => r.status !== 'Fixed').length; return n ? `${n} open` : AREAS[a].sub; }
+    const toQuote = recs.filter(r => r.status === 'Logged').length, jobs = recs.filter(r => r.status === 'PO Received').length;
+    return (toQuote || jobs) ? `${toQuote} to quote · ${jobs} to do` : AREAS[a].sub;
+  }
+  if (a === 'sit' && c.sit) { const n = c.sit.tests.filter(t => t.status !== 'Complete').length; return n ? `${n} open test${n === 1 ? '' : 's'}` : AREAS[a].sub; }
+  return AREAS[a].sub;
+}
+
+function renderStart(allowed) {
+  return `<div class="hero"><img src="logo-header.png" alt="Frontline Compliance and Fire"></div>
+    <p class="hello-line">Hi ${esc(state.config.user)}${state.config.company ? ', ' + esc(state.config.company) : ''}. What are you working on?</p>
+    ${allowed.map((a, i) => `<button class="tile area ${i === 0 ? 'primary' : ''} a-${a}" data-area="${a}"><span class="ico">${AREA_ICONS[AREAS[a].icon]}</span>
+      <span><strong>${AREAS[a].name}</strong><span class="d">${esc(areaStat(a))}</span></span></button>`).join('')}
+    ${allowed.length ? '' : '<div class="card"><p>This login has no areas switched on yet. Ask Jeff.</p></div>'}
+    <p class="muted center">Frontline Compliance and Fire · v${APP_VERSION}</p>`;
+}
+function bindStart() { $$('[data-area]').forEach(b => b.onclick = () => enterArea(b.dataset.area)); }
+
 /* ---- setup ---- */
 
 function renderSetup() {
-  return `<div class="card"><h2>Set up this device</h2>
-    <p>Type the setup code Jeff gave you, e.g. fox4821. You only do this once per phone or computer.</p>
+  return `<div class="hero"><img src="logo-header.png" alt="Frontline Compliance and Fire"></div><div class="card"><h2>Set up this device</h2>
+    <p>Type the login code Frontline gave you, e.g. fox4821. You only do this once per phone or computer.</p>
     <input id="code" autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Setup code" style="font-size:22px;letter-spacing:.04em">
     <p id="setupErr" class="err"></p>
     <button class="big" id="saveSetup" style="margin-top:6px">Connect</button>
@@ -339,7 +446,7 @@ function bindSetup() {
       $('#setupErr').textContent = 'Could not connect. Check the code and that you have signal.';
       $('#saveSetup').textContent = 'Connect'; return;
     }
-    toast(`Welcome ${state.config.user}`); go('home', 'home');
+    toast(`Welcome ${state.config.user}`); state.area = null; store.set(LS.area, null); render();
   };
   $('#saveSetup').onclick = go_;
   $('#code').onkeydown = e => { if (e.key === 'Enter') go_(); };
@@ -397,7 +504,7 @@ function roomStats(l) {
 }
 
 function roomBanner(l) {
-  if (isClient()) return '';
+  if (isClient() || state.area !== 'passive') return '';
   const t = roomStats(l);
   const min = state.config.settings.poMin, max = state.config.settings.poMax;
   const cls = t.v < min ? 'low' : t.v > max ? 'high' : 'good';
@@ -415,23 +522,37 @@ function locLists(L) {
 }
 const opts = arr => arr.map(b => `<option value="${esc(b)}">`).join('');
 
+function locPreview(L) {
+  if (!locReady(L)) return '';
+  const known = buildingList(L.site).some(b => norm(b) === norm(L.building));
+  const exists = allLocations().some(x => locKey(x) === locKey(L));
+  const label = `${L.building}${buildingName(L.site, L.building) ? ' (' + buildingName(L.site, L.building) + ')' : ''} · ${L.level} · ${L.room}`;
+  const note = !known ? 'New building. Frontline will check it and add it to the list.' : exists ? '' : 'New room on our list.';
+  return `<p class="muted" style="margin-top:10px">Saves as <strong>${esc(label)}</strong>${note ? '<br>' + esc(note) : ''}</p>`;
+}
+
+function locNextScreen() { return state.area === 'repairs' ? 'rlog' : 'peno'; }
+
 function renderLoc() {
   const L = state.loc, o = locLists(L);
+  const sites = sitesList();
+  if (!sites.includes(L.site)) { L.site = sites[0]; L.building = ''; L.level = ''; L.room = ''; }
   const list = buildingList(L.site);
   const isOther = !!L.building && !list.some(b => norm(b) === norm(L.building));
   const other = state.otherBuilding || isOther;
-  return `<div class="card"><h2>${isClient() ? 'Where is it?' : state.mode === 'old' ? 'Where was the work done?' : 'Where are you scouting?'}</h2>
-    <div class="chips">${SITES.map(s => `<button class="chip ${L.site === s ? 'on' : ''}" data-site="${s}">${s}</button>`).join('')}</div>
+  const title = state.area === 'repairs' ? 'Where is the fault?' : isClient() ? 'Where is it?' : state.mode === 'old' ? 'Where was the work done?' : 'Where are you scouting?';
+  return `<div class="card"><h2>${title}</h2>
+    ${sites.length > 1 ? `<div class="chips">${sites.map(x => `<button class="chip ${L.site === x ? 'on' : ''}" data-site="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''}
+    <label>Building</label>
+    <select id="buildingSel"><option value="">Choose…</option>${list.map(b => `<option value="${esc(b)}" ${!other && norm(b) === norm(L.building) ? 'selected' : ''}>${esc(b)}${buildingName(L.site, b) ? ' · ' + esc(buildingName(L.site, b)) : ''}</option>`).join('')}<option value="${OTHER}" ${other ? 'selected' : ''}>${OTHER}</option></select>
+    ${other ? `<input id="building" style="margin-top:8px" value="${esc(L.building)}" placeholder="Building name or code">` : ''}
     <div class="row">
-      <div><label>Building</label>
-        <select id="buildingSel"><option value="">Choose…</option>${list.map(b => `<option ${!other && norm(b) === norm(L.building) ? 'selected' : ''}>${esc(b)}</option>`).join('')}<option ${other ? 'selected' : ''}>${OTHER}</option></select>
-        ${other ? `<input id="building" style="margin-top:8px" value="${esc(L.building)}" placeholder="Type building" autocapitalize="characters">` : ''}
-      </div>
-      <div><label>Level</label><input id="level" list="dlL" value="${esc(L.level)}" placeholder="e.g. L5" autocapitalize="characters"></div>
+      <div><label>Level</label><input id="level" list="dlL" value="${esc(L.level)}" placeholder="L5, G, B1, Roof"></div>
+      <div><label>Room / area</label><input id="room" list="dlR" value="${esc(L.room)}" placeholder="Plant Room"></div>
     </div>
-    <label>Room / area</label><input id="room" list="dlR" value="${esc(L.room)}" placeholder="e.g. Plant Room">
     <datalist id="dlL">${opts(o.levels)}</datalist>
     <datalist id="dlR">${opts(o.rooms)}</datalist>
+    <div id="locPrev">${locPreview(L)}</div>
     <div id="locBanner">${locReady(L) ? roomBanner(L) : ''}</div>
     <button class="big" id="locNext" style="margin-top:14px" ${locReady(L) ? '' : 'disabled'}>Start adding here</button>
   </div>`;
@@ -443,10 +564,12 @@ function bindLoc() {
     if (L.site !== b.dataset.site) { L.site = b.dataset.site; L.building = ''; L.level = ''; L.room = ''; state.otherBuilding = false; }
     saveLoc(); render();
   });
+  const fix = { building: normBuildingText, level: normLevel, room: normRoom };
   const refresh = () => {
     const o = locLists(L);
     $('#dlL').innerHTML = opts(o.levels); $('#dlR').innerHTML = opts(o.rooms);
     $('#locBanner').innerHTML = locReady(L) ? roomBanner(L) : '';
+    $('#locPrev').innerHTML = locPreview(L);
     $('#locNext').disabled = !locReady(L);
   };
   $('#buildingSel').onchange = e => {
@@ -457,15 +580,21 @@ function bindLoc() {
   ['building', 'level', 'room'].forEach(f => {
     const el = $('#' + f);
     if (!el) return;
-    const val = () => (f === 'room' ? el.value.trim() : el.value.trim().toUpperCase());
-    el.oninput = () => { L[f] = val(); saveLoc(); $('#locNext').disabled = !locReady(L); };
-    el.onchange = () => { L[f] = val(); if (f !== 'room') el.value = L[f]; saveLoc(); refresh(); };
+    el.oninput = () => { L[f] = el.value.trim(); saveLoc(); $('#locNext').disabled = !locReady(L); };
+    el.onchange = () => {
+      let v = fix[f](el.value);
+      // match a room/level already on our list, ignoring case, so the same place is always spelled the same
+      const pool = f === 'room' ? locLists(L).rooms : f === 'level' ? locLists(L).levels : buildingList(L.site);
+      const hit = pool.find(x => norm(x) === norm(v));
+      if (hit) v = hit;
+      L[f] = v; el.value = v; saveLoc(); refresh();
+    };
   });
   $('#locNext').onclick = () => {
-    ['building', 'level', 'room'].forEach(f => { const el = $('#' + f); if (el) L[f] = el.value.trim(); });
-    L.level = L.level.toUpperCase();
+    ['building', 'level', 'room'].forEach(f => { const el = $('#' + f); if (el) L[f] = fix[f](el.value); });
+    if (!L.building || !L.level || !L.room) return;
     state.otherBuilding = false;
-    saveLoc(); go('peno');
+    saveLoc(); go(locNextScreen());
   };
 }
 
@@ -927,12 +1056,22 @@ function bindQueue() {
   });
 }
 
+/* ---- passive fire screens ---- */
+
+VIEWS.passive = new Proxy({}, { get(_, k) {
+  const client = { home: [renderClientHome, bindClientHome], peno: [renderClientPeno, bindClientPeno], saved: [renderClientSaved, bindClientSaved], browse: [renderClientList, bindClientList] };
+  const staff = { requests: [renderRequests, bindRequests], home: [renderHome, bindHome], peno: [renderPeno, bindPeno], saved: [renderSaved, bindSaved],
+    jobs: [renderJobs, bindJobs], browse: [renderBrowse, bindBrowse], edit: [renderEdit, bindEdit] };
+  return (isClient() ? client : staff)[k];
+}, ownKeys() { return ['home', 'peno', 'saved', 'browse', 'requests', 'jobs', 'edit']; },
+   getOwnPropertyDescriptor() { return { enumerable: true, configurable: true }; } });
+
 /* ---------------- start ---------------- */
 
-(async function start() {
+window.addEventListener('DOMContentLoaded', async function start() {
   try { state.queue = await db.all(); } catch (e) { toast('Storage unavailable on this browser'); }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   render();
   if (state.setup) { if (state.queue.length && navigator.onLine) sync(); else refreshConfig(true); }
-})();
+});
