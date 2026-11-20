@@ -64,7 +64,7 @@ async function loadDash(force) {
   if (office.loading) return;
   if (office.dash && !force && office.dash.site === office.site) return;
   office.loading = true; office.err = ''; render();
-  try { office.dash = await api('dashboard', { site: office.site }); }
+  try { office.dash = await api('dashboard', { site: office.site }); office.animated = false; }
   catch (e) { office.err = navigator.onLine ? e.message : 'The back office needs signal.'; }
   office.loading = false; render();
 }
@@ -88,85 +88,226 @@ function bars(items, max, fmt) {
   return `<div class="bars">${items.map(i => `<div class="barrow"><span class="bl">${esc(i.label)}</span><span class="bt"><span class="bf ${i.cls || ''}" style="width:${max ? Math.max(1, Math.round(i.value / max * 100)) : 0}%"></span></span><span class="bv">${fmt(i)}</span></div>`).join('')}</div>`;
 }
 
-function monthChart(months, thisMonth, bank, monthMin) {
-  const recent = months.filter(m => m.month >= shiftMonth(thisMonth, -8) && (m.done + m.open > 0 || m.month <= thisMonth)).slice(0, 18);
-  if (!recent.length) return '<p class="muted">No months yet.</p>';
-  const max = Math.max(monthMin, ...recent.map(m => m.done + m.open));
-  const H = 160, W = Math.max(recent.length * 46, 300);
-  const y = v => H - Math.round(v / max * (H - 10));
-  const bw = 30;
-  const target = y(monthMin);
-  return `<div class="chartwrap"><svg viewBox="0 0 ${W} ${H + 34}" role="img" aria-label="Work by month: invoiced and planned">
-    <line x1="0" x2="${W}" y1="${target}" y2="${target}" class="tgt"/><text x="4" y="${target - 4}" class="tl">target ${k$(monthMin)}</text>
-    ${recent.map((m, i) => {
-      const x = i * 46 + 8, d = y(m.done), o = y(m.done + m.open);
-      return `<g><title>${m.month}: ${money(m.done)} done/invoiced, ${money(m.open)} planned or open</title>
-        ${m.done ? `<rect x="${x}" y="${d}" width="${bw}" height="${H - d}" class="bdone"/>` : ''}
-        ${m.open ? `<rect x="${x}" y="${o}" width="${bw}" height="${d - o}" class="bopen"/>` : ''}
-        <text x="${x + bw / 2}" y="${H + 14}" text-anchor="middle" class="tl ${m.month === thisMonth ? 'now' : ''}">${monthShort(m.month)}</text>
-        <text x="${x + bw / 2}" y="${H + 28}" text-anchor="middle" class="tl">${k$(m.done + m.open)}</text></g>`;
-    }).join('')}</svg></div>
-    <p class="legend"><span class="sw bdone"></span> Done or invoiced <span class="sw bopen"></span> Planned or open · plus ${money(bank)} in the bank not on a PO yet</p>`;
-}
 function shiftMonth(m, n) { const [Y, M] = m.split('-').map(Number); const d = new Date(Y, M - 1 + n, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
 function monthShort(m) { const [Y, M] = m.split('-').map(Number); return new Date(Y, M - 1, 1).toLocaleDateString('en-AU', { month: 'short' }) + (M === 1 ? ' ' + String(Y).slice(2) : ''); }
+function monthLong(m) { const [Y, M] = m.split('-').map(Number); return new Date(Y, M - 1, 1).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' }); }
+const reduceMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* The runway: each month from now on, filled by POs already planned (solid) and then by the bank (striped),
+   at the monthly target. Past months show what was done. This is the one number that matters: how far ahead are we. */
+function runwayModel(D) {
+  const P = D.passive, now = D.thisMonth, target = D.monthMin;
+  const byM = {}; P.months.forEach(m => byM[m.month] = m);
+  let bankLeft = P.bank;
+  const cells = [];
+  for (let i = -5; i <= 12; i++) {
+    const m = shiftMonth(now, i), rec = byM[m] || { done: 0, open: 0 };
+    const c = { month: m, past: i < 0, now: i === 0, done: rec.done, open: rec.open, bank: 0 };
+    if (i >= 0) {
+      const room = Math.max(0, target - rec.done - rec.open);
+      const lastPlanned = P.months.filter(x => x.month >= now && x.open > 0).map(x => x.month).sort().pop() || now;
+      if (m >= lastPlanned || rec.open === 0) { c.bank = Math.min(room, bankLeft); bankLeft -= c.bank; }
+    }
+    c.total = c.done + c.open + c.bank;
+    c.fill = Math.min(1, c.total / target);
+    cells.push(c);
+  }
+  const future = cells.filter(c => !c.past);
+  const ahead = future.reduce((t, c) => t + c.fill, 0) + Math.max(0, bankLeft) / target;
+  let through = '';
+  for (const c of future) { if (c.fill >= 0.98) through = c.month; else break; }
+  return { cells, ahead, through, overflow: Math.max(0, bankLeft) };
+}
+
+function renderRunway(D) {
+  const R = runwayModel(D);
+  const k = n => n >= 1000 ? '$' + (n / 1000).toFixed(1) + 'k' : n ? money(n) : '–';
+  return `<section class="runway" aria-label="Months of work ahead">
+    <div class="rw-head">
+      <div><p class="rw-kicker">Work runway${D.site ? ' · ' + esc(D.site) : ''}</p>
+        <p class="rw-big"><span class="countup" data-to="${R.ahead.toFixed(1)}" data-dec="1">${R.ahead.toFixed(1)}</span><small>months of passive fire work ahead</small></p>
+        <p class="rw-sub">${R.through ? `Fully booked through <strong>${monthLong(R.through)}</strong> at ${k$(D.monthMin)} a month.` : `This month isn't full yet. ${money(Math.max(0, D.monthMin - (R.cells[5].total)))} to go.`}${R.overflow ? ` Plus ${money(R.overflow)} more in the bank beyond the strip.` : ''}</p></div>
+      <img src="logo-header.png" alt="" class="rw-logo">
+    </div>
+    <div class="rw-strip">${R.cells.map((c, i) => {
+      const seg = v => (v / D.monthMin * 100).toFixed(1);
+      return `<div class="rw-cell ${c.past ? 'past' : ''} ${c.now ? 'now' : ''}" style="--i:${i}" data-tip="${esc(monthLong(c.month))}|${c.done ? 'Done or invoiced ' + money(c.done) : ''}|${c.open ? 'Planned or open ' + money(c.open) : ''}|${c.bank ? 'From the bank ' + money(c.bank) : ''}|${!c.past ? Math.round(c.fill * 100) + '% of target' : ''}">
+        <div class="rw-bar"><span class="f-done" style="height:${Math.min(100, seg(c.done))}%"></span><span class="f-open" style="height:${Math.min(100, seg(c.open))}%"></span><span class="f-bank" style="height:${Math.min(100, seg(c.bank))}%"></span></div>
+        <span class="rw-m">${monthShort(c.month)}</span><span class="rw-v">${k(c.total)}</span></div>`;
+    }).join('')}</div>
+    <p class="rw-key"><span class="sw done"></span>Done or invoiced <span class="sw open"></span>Planned POs <span class="sw sw-bank"></span>In the bank, not on a PO yet <span class="tick"></span>Today</p>
+  </section>`;
+}
+
+/* Revenue by month: last 12 months and what's booked ahead, against the target band. */
+function revenueChart(D) {
+  const P = D.passive, now = D.thisMonth, R = runwayModel(D);
+  const rw = {}; R.cells.forEach(c => rw[c.month] = c);
+  const byM = {}; P.months.forEach(m => byM[m.month] = m);
+  const months = [];
+  for (let i = -11; i <= 6; i++) {
+    const m = shiftMonth(now, i), rec = byM[m] || { done: 0, open: 0 };
+    months.push({ month: m, done: rec.done, open: rec.open, bank: rw[m] ? rw[m].bank : 0, future: i > 0, now: i === 0 });
+  }
+  const W = 900, H = 260, padL = 46, padB = 36, padT = 14;
+  const max = Math.max(D.monthMax * 1.25, ...months.map(m => m.done + m.open + m.bank)) * 1.05;
+  const y = v => padT + (H - padT - padB) * (1 - v / max);
+  const step = (W - padL - 8) / months.length, bw = Math.min(34, step * 0.62);
+  const stepV = [2500, 5000, 10000, 20000, 25000, 50000].find(v => max / v <= 5) || 100000;
+  const ticks = []; for (let t = 0; t <= max; t += stepV) ticks.push(t);
+  const past12 = months.filter(m => !m.future && !m.now);
+  const done12 = past12.reduce((t, m) => t + m.done + m.open, 0);
+  const hit = past12.filter(m => m.done + m.open >= D.monthMin).length;
+  return `<div class="panel chart-panel"><div class="p-head"><h3>Revenue by month</h3>
+      <p class="p-note">${money(done12)} over the last ${past12.length} months · target hit ${hit} of ${past12.length} months</p></div>
+    <div class="chartbox"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Revenue by month against the monthly target">
+      <defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fbd9cb"/><rect width="2.4" height="6" fill="#e8572a"/></pattern></defs>
+      ${ticks.map(t => `<line x1="${padL}" x2="${W}" y1="${y(t)}" y2="${y(t)}" class="grid"/><text x="${padL - 8}" y="${y(t) + 4}" text-anchor="end" class="ax">${t ? '$' + (t / 1000) + 'k' : '0'}</text>`).join('')}
+      <rect x="${padL}" y="${y(D.monthMax)}" width="${W - padL}" height="${y(D.monthMin) - y(D.monthMax)}" class="band"/>
+      <text x="${W - 4}" y="${y(D.monthMax) - 5}" text-anchor="end" class="ax band-l">Target ${k$(D.monthMin)}–${k$(D.monthMax)}</text>
+      ${months.map((m, i) => {
+        const x = padL + i * step + (step - bw) / 2;
+        const yd = y(m.done), yo = y(m.done + m.open), yb = y(m.done + m.open + m.bank), base = y(0);
+        return `<g class="mbar ${m.now ? 'now' : ''}" style="--i:${i}" data-tip="${esc(monthLong(m.month))}|${m.done ? 'Done or invoiced ' + money(m.done) : ''}|${m.open ? 'Planned or open ' + money(m.open) : ''}|${m.bank ? 'Bank, not on a PO ' + money(m.bank) : ''}|Total ${money(m.done + m.open + m.bank)}">
+          <rect x="${x - (step - bw) / 2}" y="${padT}" width="${step}" height="${base - padT}" class="hitbox"/>
+          ${m.bank ? `<rect x="${x}" y="${yb}" width="${bw}" height="${yo - yb}" fill="url(#hatch)" class="grow"/>` : ''}
+          ${m.open ? `<rect x="${x}" y="${yo}" width="${bw}" height="${yd - yo}" class="b-open grow"/>` : ''}
+          ${m.done ? `<rect x="${x}" y="${yd}" width="${bw}" height="${base - yd}" class="b-done grow"/>` : ''}
+          <text x="${x + bw / 2}" y="${H - 14}" text-anchor="middle" class="ax ${m.now ? 'ax-now' : ''}">${monthShort(m.month)}</text>
+        </g>`;
+      }).join('')}
+      <line x1="${padL + 11.5 * step}" x2="${padL + 11.5 * step}" y1="${padT}" y2="${y(0)}" class="today"/>
+    </svg></div></div>`;
+}
+
+function pipelineChain(stages) {
+  const max = Math.max(...stages.map(s => s.v), 1);
+  return `<div class="chain">${stages.map((s, i) => `<div class="link ${s.hot ? 'hot' : ''}" style="--i:${i}">
+      <span class="l-name">${esc(s.label)}</span><span class="l-val">${s.v ? k$(s.v) : s.n ? s.n : '–'}</span>
+      <span class="l-n">${s.n} ${esc(s.unit)}${s.n === 1 ? '' : 's'}</span>
+      <span class="l-bar"><span style="width:${Math.max(s.v ? 4 : 0, s.v / max * 100)}%"></span></span></div>`).join('')}</div>`;
+}
+
+function kpi(label, value, note, cls) {
+  return `<div class="kpi ${cls || ''}"><span class="k-l">${label}</span><span class="k-v">${value}</span><span class="k-n">${note}</span></div>`;
+}
 
 function renderDash() {
   const D = office.dash;
   if (!D || office.loading) return officeHead('Dashboard') + officeWait();
   const v = office.view, P = D.passive, Rp = D.repairs;
-  const tabs = `<div class="chips">${[['passive', 'Passive fire'], ['repairs', 'Fire repairs']].map(([k, l]) => `<button class="chip ${v === k ? 'on' : ''}" data-oview="${k}">${l}</button>`).join('')}</div>`;
+  const now = D.thisMonth;
+  const past12 = P.months.filter(m => m.month < now && m.month >= shiftMonth(now, -12));
+  const rev12 = past12.reduce((t, m) => t + m.done + m.open, 0);
+  const avg = past12.length ? rev12 / past12.length : 0;
+  const planned = P.months.filter(m => m.month >= now).reduce((t, m) => t + m.open, 0);
+  const tabs = `<div class="seg" role="tablist">${[['passive', 'Passive fire'], ['repairs', 'Fire repairs']].map(([k, l]) => `<button role="tab" aria-selected="${v === k}" class="${v === k ? 'on' : ''}" data-oview="${k}">${l}</button>`).join('')}</div>`;
   const todo = [];
-  if (D.todo.requested) todo.push(`<button class="todo" data-go2="passive:requests">${D.todo.requested} client penetration request${D.todo.requested === 1 ? '' : 's'} to price</button>`);
-  if (D.todo.repairsToPrice) todo.push(`<button class="todo" data-go2="repairs:rfind">${D.todo.repairsToPrice} repair${D.todo.repairsToPrice === 1 ? '' : 's'} with no price</button>`);
-  if (D.todo.unconfirmed && perms().admin) todo.push(`<button class="todo" data-go2="office:locs">${D.todo.unconfirmed} unconfirmed location${D.todo.unconfirmed === 1 ? '' : 's'} to tidy</button>`);
+  if (D.todo.requested) todo.push(`<button class="todo" data-go2="passive:requests"><b>${D.todo.requested}</b> client request${D.todo.requested === 1 ? '' : 's'} to price</button>`);
+  if (D.todo.repairsToPrice) todo.push(`<button class="todo" data-go2="repairs:rfind"><b>${D.todo.repairsToPrice}</b> repair${D.todo.repairsToPrice === 1 ? '' : 's'} to price</button>`);
+  if (D.todo.unconfirmed && perms().admin) todo.push(`<button class="todo" data-go2="office:locs"><b>${D.todo.unconfirmed}</b> location${D.todo.unconfirmed === 1 ? '' : 's'} to tidy</button>`);
+  const top = `<div class="dash-top"><div><p class="dash-date">${new Date().toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })}</p><h2 class="dash-title">Dashboard</h2></div>
+    <div class="dash-ctl">${tabs}<div class="seg">${['', ...sitesList()].map(x => `<button class="${office.site === x ? 'on' : ''}" data-osite="${esc(x)}">${x || 'All sites'}</button>`).join('')}</div>
+    <button class="ghost small" id="oref" aria-label="Refresh">↻ Refresh</button></div></div>
+    ${todo.length ? `<div class="todos"><span class="todo-l">Needs you</span>${todo.join('')}</div>` : ''}`;
   let body;
   if (v === 'passive') {
-    const order = ['Requested', 'Scouted', 'Allocated', 'Quoted', 'PO Received', 'Done', 'Invoiced'];
-    const pipe = order.map(st => {
-      const pen = P.penStatus[st] || { n: 0, v: 0 }, po = P.poStatus[st];
-      const val = (st === 'Requested' || st === 'Scouted') ? pen.v : (po ? po.v : pen.v);
-      const n = (st === 'Requested' || st === 'Scouted') ? pen.n : (po ? po.n : 0);
-      return { label: st, value: val, n, unit: (st === 'Requested' || st === 'Scouted') ? 'penetration' : 'PO' };
-    });
-    const maxPipe = Math.max(...pipe.map(p => p.value), 1);
-    const bmax = Math.max(...P.buildings.map(b => b.bank + b.open + b.done), 1);
-    body = `<div class="metrics">
-      <div class="metric big"><span>Months of work ahead</span><strong>${P.monthsAhead.toFixed(1)}</strong><em>${P.plannedMonths} planned + ${P.bankMonths.toFixed(1)} in the bank</em></div>
-      <div class="metric"><span>In the bank</span><strong>${k$(P.bank)}</strong><em>${P.bankN} penetrations not on a PO</em></div>
-      <div class="metric"><span>Planned, not done</span><strong>${k$(P.plannedValue)}</strong><em>from ${monthShort(D.thisMonth)} on</em></div>
-      <div class="metric"><span>Monthly target</span><strong>${k$(D.monthMin)}–${k$(D.monthMax)}</strong><em>${D.site || 'all sites'}</em></div></div>
-      <div class="ogrid"><div class="card"><h3>Work by month</h3>${monthChart(P.months, D.thisMonth, P.bank, D.monthMin)}</div>
-      <div class="card"><h3>Pipeline</h3>${bars(pipe.map(p => ({ label: p.label, value: p.value, cls: p.label === 'Scouted' ? 'hot' : '' , n: p.n, unit: p.unit })), maxPipe, i => `${money(i.value)} <small>${i.n} ${i.unit}${i.n === 1 ? '' : 's'}</small>`)}</div></div>
-      <div class="card"><h3>By building</h3>
-        <table class="otable"><thead><tr><th>Building</th><th>In the bank</th><th>Open POs</th><th>Done</th><th class="w40"></th></tr></thead><tbody>
-        ${P.buildings.map(b => `<tr><td><strong>${esc(b.building)}</strong> <span class="muted">${esc(buildingName(b.site, b.building) || b.site)}</span></td><td>${money(b.bank)}</td><td>${money(b.open)}</td><td>${money(b.done)}</td>
-          <td><span class="stack"><span class="hot" style="width:${b.bank / bmax * 100}%"></span><span class="op" style="width:${b.open / bmax * 100}%"></span><span class="dn" style="width:${b.done / bmax * 100}%"></span></span></td></tr>`).join('') || '<tr><td colspan="5" class="muted">No penetrations yet.</td></tr>'}
-        </tbody></table><p class="muted">Only penetrations logged in the app. Past jobs imported from the register are in History and the month chart.</p></div>`;
+    const st = (k) => P.penStatus[k] || { n: 0, v: 0 }, po = (k) => P.poStatus[k] || { n: 0, v: 0 };
+    const chain = [
+      { label: 'Client requests', v: 0, n: st('Requested').n, unit: 'item' },
+      { label: 'In the bank', v: st('Scouted').v, n: st('Scouted').n, unit: 'penetration', hot: true },
+      { label: 'Allocated', v: po('Allocated').v, n: po('Allocated').n, unit: 'PO' },
+      { label: 'Quoted', v: po('Quoted').v, n: po('Quoted').n, unit: 'PO' },
+      { label: 'PO received', v: po('PO Received').v, n: po('PO Received').n, unit: 'PO' },
+      { label: 'Done', v: po('Done').v, n: po('Done').n, unit: 'PO' },
+      { label: 'Invoiced', v: po('Invoiced').v, n: po('Invoiced').n, unit: 'PO' },
+    ];
+    const bl = P.buildings.map(b => Object.assign({ total: b.bank + b.open + b.done }, b)).sort((a, b) => b.total - a.total);
+    const bmax = Math.max(...bl.map(b => b.total), 1);
+    body = renderRunway(D) + `<div class="kpis">
+        ${kpi('In the bank', `<span class="countup" data-to="${P.bank}" data-money="1">${money(P.bank)}</span>`, `${P.bankN} penetrations ready to plan`, 'accent')}
+        ${kpi('Booked ahead', money(planned), `planned POs from ${monthShort(now)}`)}
+        ${kpi('Last 12 months', money(rev12), `${money(avg)} a month on average`)}
+        ${kpi('Against target', avg ? Math.round(avg / D.monthMin * 100) + '%' : '–', `of ${k$(D.monthMin)} a month, on average`)}
+      </div>
+      ${revenueChart(D)}
+      <div class="panel"><div class="p-head"><h3>Pipeline</h3><p class="p-note">From client request to invoice</p></div>${pipelineChain(chain)}</div>
+      <div class="panel"><div class="p-head"><h3>By building</h3><p class="p-note">Penetrations logged in the app. Imported history is in History.</p></div>
+        ${bl.length ? `<div class="bld">${bl.map(b => `<div class="b-row"><div class="b-name"><strong>${esc(b.building)}</strong><span>${esc(buildingName(b.site, b.building) || b.site)}</span></div>
+          <div class="b-bar"><span class="s-bank" style="width:${b.bank / bmax * 100}%"></span><span class="s-open" style="width:${b.open / bmax * 100}%"></span><span class="s-done" style="width:${b.done / bmax * 100}%"></span></div>
+          <div class="b-val">${money(b.total)}<span>${b.n} pens</span></div></div>`).join('')}</div>
+          <p class="rw-key light"><span class="sw sw-bank"></span>In the bank <span class="sw open2"></span>On a PO <span class="sw done"></span>Done</p>`
+        : `<p class="empty">Nothing scouted in the app yet. Buildings appear here as soon as you start.</p>`}</div>`;
   } else {
-    const order = ['Logged', 'Quoted', 'PO Received', 'Done', 'Invoiced'];
-    const items = order.map(st => ({ label: st, value: (Rp.status[st] || {}).v || 0, n: (Rp.status[st] || {}).n || 0 }));
-    const mx = Math.max(...items.map(i => i.value), 1);
-    const open = (Rp.status['Quoted'] || {}).v || 0, po = (Rp.status['PO Received'] || {}).v || 0;
-    body = `<div class="metrics">
-      <div class="metric big"><span>Quoted, waiting on a PO</span><strong>${k$(open)}</strong><em>${(Rp.status['Quoted'] || {}).n || 0} repairs</em></div>
-      <div class="metric"><span>PO received, to do</span><strong>${k$(po)}</strong><em>${(Rp.status['PO Received'] || {}).n || 0} repairs</em></div>
-      <div class="metric"><span>Logged to quote</span><strong>${(Rp.status['Logged'] || {}).n || 0}</strong><em>${Rp.toPrice} with no price</em></div>
-      <div class="metric"><span>Total repairs</span><strong>${Rp.n}</strong><em>${D.site || 'all sites'}</em></div></div>
-      <div class="card"><h3>Pipeline</h3>${bars(items, mx, i => `${money(i.value)} <small>${i.n} repair${i.n === 1 ? '' : 's'}</small>`)}</div>`;
+    const st = k => Rp.status[k] || { n: 0, v: 0 };
+    const chain = [
+      { label: 'Logged', v: st('Logged').v, n: st('Logged').n, unit: 'repair' },
+      { label: 'Quoted', v: st('Quoted').v, n: st('Quoted').n, unit: 'repair', hot: true },
+      { label: 'PO received', v: st('PO Received').v, n: st('PO Received').n, unit: 'repair' },
+      { label: 'Done', v: st('Done').v, n: st('Done').n, unit: 'repair' },
+      { label: 'Invoiced', v: st('Invoiced').v, n: st('Invoiced').n, unit: 'repair' },
+    ];
+    body = `<section class="runway rep"><div class="rw-head"><div><p class="rw-kicker">Fire repairs${D.site ? ' · ' + esc(D.site) : ''}</p>
+        <p class="rw-big"><span class="countup" data-to="${st('Quoted').v + st('PO Received').v}" data-money="1">${money(st('Quoted').v + st('PO Received').v)}</span><small>quoted or approved, not yet done</small></p>
+        <p class="rw-sub">${Rp.n} repairs logged · ${Rp.toPrice} waiting on a price</p></div><img src="logo-header.png" alt="" class="rw-logo"></div></section>
+      <div class="kpis">
+        ${kpi('Waiting on a PO', money(st('Quoted').v), `${st('Quoted').n} quoted`, 'accent')}
+        ${kpi('Approved, to do', money(st('PO Received').v), `${st('PO Received').n} with a PO`)}
+        ${kpi('To quote', String(st('Logged').n), `${Rp.toPrice} with no price yet`)}
+        ${kpi('Done and invoiced', money(st('Done').v + st('Invoiced').v), `${st('Done').n + st('Invoiced').n} repairs`)}
+      </div>
+      <div class="panel"><div class="p-head"><h3>Pipeline</h3><p class="p-note">Separate from passive fire</p></div>${pipelineChain(chain)}</div>`;
   }
-  return officeHead('Dashboard') + tabs + (todo.length ? `<div class="todos">${todo.join('')}</div>` : '') + body +
-    `<p class="muted center">Updated ${new Date(D.serverTime).toLocaleString('en-AU', { dateStyle: 'short', timeStyle: 'short' })}</p>`;
+  return `<div class="dash">${top}${body}<p class="dash-foot"><img src="logo-header.png" alt="Frontline Compliance and Fire"> Live from the master sheet · updated ${new Date(D.serverTime).toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' })}</p></div><div id="tip" role="tooltip"></div>`;
 }
+
 function bindDash() {
   bindOfficeHead(); bindOfficeWait();
   if (!office.dash && !office.loading && !office.err) loadDash();
-  $$('[data-oview]').forEach(b => b.onclick = () => { office.view = b.dataset.oview; render(); });
+  $$('[data-oview]').forEach(b => b.onclick = () => { office.view = b.dataset.oview; office.animated = false; render(); });
   $$('[data-go2]').forEach(b => b.onclick = () => {
     const [area, screen] = b.dataset.go2.split(':');
     if (area === 'office') { go(screen, screen); return; }
     state.area = area; store.set(LS.area, area); state.screen = screen; state.tab = homeOf(area); render();
   });
+  // hover / tap details for the runway and chart
+  const tip = $('#tip');
+  if (tip) {
+    const show = (el, ev) => {
+      const parts = el.dataset.tip.split('|').filter(Boolean);
+      tip.innerHTML = `<strong>${esc(parts[0])}</strong>${parts.slice(1).map(p => `<span>${esc(p)}</span>`).join('')}`;
+      tip.classList.add('on');
+      const r = el.getBoundingClientRect();
+      const x = Math.min(window.innerWidth - tip.offsetWidth - 8, Math.max(8, r.left + r.width / 2 - tip.offsetWidth / 2));
+      tip.style.left = x + 'px'; tip.style.top = (r.top + window.scrollY - tip.offsetHeight - 10) + 'px';
+    };
+    $$('[data-tip]').forEach(el => {
+      el.addEventListener('mouseenter', e => show(el, e));
+      el.addEventListener('mouseleave', () => tip.classList.remove('on'));
+      el.addEventListener('click', e => show(el, e));
+    });
+  }
+  // on narrow screens, start the runway and chart at this month rather than six months ago
+  const strip = $('.rw-strip'), nowCell = $('.rw-cell.now');
+  if (strip && nowCell && strip.scrollWidth > strip.clientWidth) strip.scrollLeft = nowCell.offsetLeft - strip.offsetLeft - 60;
+  const cb = $('.chartbox'); if (cb && cb.scrollWidth > cb.clientWidth) cb.scrollLeft = cb.scrollWidth;
+  // one orchestrated entrance the first time the numbers load
+  const dash = $('.dash');
+  if (dash && office.dash && !office.loading) {
+    if (!office.animated && !reduceMotion()) {
+      dash.classList.add('enter');
+      $$('.countup').forEach(el => {
+        const to = Number(el.dataset.to), dec = Number(el.dataset.dec || 0), isMoney = !!el.dataset.money, t0 = performance.now(), dur = 1100;
+        const tick = t => {
+          const p = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - p, 3), v = to * e;
+          el.textContent = isMoney ? money(v) : v.toFixed(dec);
+          if (p < 1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+    }
+    office.animated = true;
+  }
 }
 
 /* ---- plan months ---- */

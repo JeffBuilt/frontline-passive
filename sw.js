@@ -1,5 +1,5 @@
 /* Offline cache for the app shell. Bump VERSION when app files change. */
-const VERSION = 'pf-v2.0.0';
+const VERSION = 'pf-v2.1.0';
 const SHELL = ['./', 'index.html', 'app.js', 'repairs.js', 'office.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'logo-header.png', 'fonts/barlow-latin-400-normal.woff2', 'fonts/barlow-latin-500-normal.woff2', 'fonts/barlow-latin-600-normal.woff2', 'fonts/barlow-semi-condensed-latin-600-normal.woff2', 'fonts/barlow-semi-condensed-latin-700-normal.woff2'];
 
 self.addEventListener('install', e => {

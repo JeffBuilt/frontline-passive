@@ -1,7 +1,7 @@
 /* Frontline Compliance and Fire - passive fire app (offline-first PWA) */
 'use strict';
 
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.1.0';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const LS = { setup: 'pf_setup', config: 'pf_config', loc: 'pf_loc', draft: 'pf_draft', localLocs: 'pf_local_locs', area: 'pf_area', rdraft: 'pf_rdraft' };
 const FACES = ['Wall', 'Floor', 'Ceiling / slab'];
