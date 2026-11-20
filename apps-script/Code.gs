@@ -1,8 +1,10 @@
 /**
- * Frontline Compliance and Fire - passive fire backend (v1.7)
+ * Frontline Compliance and Fire - passive fire backend (v1.8)
  * Bound to the "Passive Fire Master" Google Sheet (Extensions > Apps Script).
  * Deploy > New deployment > Web app: Execute as "Me", Who has access "Anyone".
- * Phones need a setup code (word + 4 digits) from addUser(); codes are stored only as SHA-256 hashes on the Users tab.
+ * Phones need a setup code (word + 4 digits) from addUser() (staff) or addClient() (clients).
+ * Codes are stored only as SHA-256 hashes on the Users tab. Column F = Role (staff / client), G = Company.
+ * Clients can only log penetrations (status Requested) and see their own requests. They never see prices.
  * After pasting a new version: Deploy > Manage deployments > edit (pencil) > Version: New version > Deploy.
  */
 
@@ -16,11 +18,12 @@ const C = {
   code: 1, scoutedAt: 2, scoutedBy: 3, site: 4, building: 5, level: 6, room: 7, location: 8,
   face: 9, type: 10, size: 11, product: 12, qty: 13, unit: 14, access: 15, loading: 16,
   extra: 17, price: 18, notes: 19, before: 20, after: 21, status: 22, month: 23, vp: 24,
-  doneDate: 25, doneBy: 26, recordKey: 27, substrate: 28,
+  doneDate: 25, doneBy: 26, recordKey: 27, substrate: 28, clientType: 29,
 };
-const NCOLS = 28;
+const NCOLS = 29;
 
-const PRICE_EDITABLE = ['Scouted', 'Allocated'];
+const PRICE_EDITABLE = ['Requested', 'Scouted', 'Allocated'];
+const DEFAULT_CLIENT_TYPES = 'Cables, Cable tray, Metal pipe, Plastic pipe, Lagged pipe, Duct, Conduit, Mixed services, Other';
 const OPEN_STATUSES = ['Allocated', 'Quoted', 'PO Received'];
 const LOCKED = ['Invoiced'];
 
@@ -36,6 +39,13 @@ function doPost(e) {
   const user = checkKey_(body.key);
   if (!user) return json_({ ok: false, error: 'App key not recognised. Ask Jeff for a new setup code.' });
   try {
+    if (user.role === 'client') {
+      switch (body.action) {
+        case 'config': return json_(getClientConfig_(user));
+        case 'request': return json_(withLock_(() => requestPen_(user, body.record)));
+        default: return json_({ ok: false, error: 'Not available on a client code' });
+      }
+    }
     switch (body.action) {
       case 'config': return json_(getConfig_(user));
       case 'submit': return json_(withLock_(() => submitPen_(user, body.record)));
@@ -58,7 +68,9 @@ function checkKey_(key) {
   const hash = sha256_(String(key).trim().toLowerCase());
   const rows = rows_(SHEET.users);
   for (const r of rows) {
-    if (String(r[2]) === hash && String(r[3]).toLowerCase() === 'yes') return { name: String(r[0]), email: String(r[1]) };
+    if (String(r[2]) === hash && String(r[3]).toLowerCase() === 'yes') {
+      return { name: String(r[0]), email: String(r[1]), role: String(r[5] || '').toLowerCase() === 'client' ? 'client' : 'staff', company: String(r[6] || '') };
+    }
   }
   cache.put('KEY_FAILS', String(fails + 1), 3600);
   return null;
@@ -92,7 +104,7 @@ function getConfig_(user) {
   });
 
   return {
-    ok: true, user: user.name, rates, access, locations, substrates, buildings,
+    ok: true, role: 'staff', user: user.name, rates, access, locations, substrates, buildings,
     settings: { poMin: Number(settings['PO minimum ($ ex GST)']) || 2500, poMax: Number(settings['PO maximum ($ ex GST)']) || 3500, monthMin: Number(settings['Monthly target minimum ($ ex GST)']) || 12000 },
     records: records.slice(-3000),
     serverTime: new Date().toISOString(),
@@ -110,7 +122,7 @@ function recordOut_(r) {
     qty: Number(r[C.qty - 1]) || 1, unit: Number(r[C.unit - 1]) || 0, access: String(r[C.access - 1]),
     loading: Number(r[C.loading - 1]) || 0, extra: Number(r[C.extra - 1]) || 0, price: Number(r[C.price - 1]) || 0,
     notes: String(r[C.notes - 1]), status: String(r[C.status - 1]), month: String(r[C.month - 1]), vp: String(r[C.vp - 1]),
-    doneDate: d(r[C.doneDate - 1]), doneBy: String(r[C.doneBy - 1]),
+    doneDate: d(r[C.doneDate - 1]), doneBy: String(r[C.doneBy - 1]), clientType: String(r[C.clientType - 1] || ''),
     before: first(r[C.before - 1]), after: first(r[C.after - 1]),
     beforeCount: String(r[C.before - 1] || '').split('\n').filter(String).length,
     afterCount: String(r[C.after - 1] || '').split('\n').filter(String).length,
@@ -161,6 +173,78 @@ function submitPen_(user, rec) {
   v[C.recordKey - 1] = rec.recordKey;
   sh.getRange(row, 1, 1, NCOLS).setValues([v]);
 
+  addLocationIfNew_(rec, user);
+  return { ok: true, code: code, changed: changed };
+}
+
+/* ================= client codes ================= */
+
+function getClientConfig_(user) {
+  const settings = settings_();
+  const locations = rows_(SHEET.locations).filter(r => r[0])
+    .map(r => ({ site: String(r[0]), building: String(r[1]), level: String(r[2]), room: String(r[3]), roomNo: Number(r[5]) || 0 }));
+  const split = (v, d) => String(v || d).split(',').map(s => s.trim()).filter(String);
+  const buildings = {};
+  const bsh = SpreadsheetApp.getActive().getSheetByName('Buildings');
+  if (bsh) bsh.getDataRange().getValues().slice(1).forEach(r => {
+    if (r[0] && r[1]) (buildings[String(r[0])] = buildings[String(r[0])] || []).push(String(r[1]).trim());
+  });
+  // Only their own requests, with a plain-English status and no money.
+  const plain = s => s === 'Requested' ? 'Received' : (s === 'Scouted' || s === 'Allocated') ? 'Being quoted'
+    : (s === 'Quoted' || s === 'PO Received') ? 'Quoted' : (s === 'Done' || s === 'Invoiced') ? 'Fixed' : s;
+  const records = rows_(SHEET.pens)
+    .filter(r => r[C.code - 1] && String(r[C.scoutedBy - 1]) === user.name && r[C.status - 1] !== 'Removed')
+    .map(r => ({
+      code: String(r[C.code - 1]), scoutedAt: r[C.scoutedAt - 1] instanceof Date ? r[C.scoutedAt - 1].toISOString() : String(r[C.scoutedAt - 1]),
+      site: String(r[C.site - 1]), building: String(r[C.building - 1]), level: String(r[C.level - 1]), room: String(r[C.room - 1]),
+      location: String(r[C.location - 1]), face: String(r[C.face - 1]), substrate: String(r[C.substrate - 1]),
+      clientType: String(r[C.clientType - 1] || ''), qty: Number(r[C.qty - 1]) || 1, notes: String(r[C.notes - 1]),
+      status: plain(String(r[C.status - 1])),
+    }));
+  return {
+    ok: true, role: 'client', user: user.name, company: user.company, locations, buildings,
+    substrates: split(settings['Substrate options'], 'Plasterboard, Block / brick, Concrete, Other'),
+    clientTypes: split(settings['Client penetration types'], DEFAULT_CLIENT_TYPES),
+    records: records.slice(-1000), serverTime: new Date().toISOString(),
+  };
+}
+
+/** A client logs a penetration. It lands as "Requested" with no price until we price it. */
+function requestPen_(user, rec) {
+  if (!rec || !rec.recordKey || !rec.code) throw new Error('Missing record');
+  if (!rec.site || !rec.building || !rec.level || !rec.room) throw new Error('Location is incomplete');
+  const sh = sheet_(SHEET.pens);
+  if (!sh.getRange(1, C.clientType).getValue()) sh.getRange(1, C.clientType).setValue('Client pen type');
+  const byKey = findRow_(sh, C.recordKey, rec.recordKey);
+  if (byKey) return { ok: true, code: sh.getRange(byKey, C.code).getValue(), duplicate: true };
+
+  let code = String(rec.code).toUpperCase().replace(/[^A-Z0-9.]/g, '');
+  let changed = false;
+  if (findRow_(sh, C.code, code)) {
+    const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    for (let i = 0; i < letters.length; i++) {
+      if (!findRow_(sh, C.code, code + letters[i])) { code = code + letters[i]; changed = true; break; }
+    }
+  }
+  const folder = locationFolder_(rec.site, rec.building, rec.level, rec.room);
+  const photos = savePhotos_(folder, code, 'client', (rec.photos || []).slice(0, 3));
+
+  const row = sh.getLastRow() + 1;
+  const v = new Array(NCOLS).fill('');
+  v[C.code - 1] = code;
+  v[C.scoutedAt - 1] = rec.capturedAt ? new Date(rec.capturedAt) : new Date();
+  v[C.scoutedBy - 1] = user.name;
+  v[C.site - 1] = rec.site; v[C.building - 1] = rec.building; v[C.level - 1] = rec.level; v[C.room - 1] = rec.room;
+  v[C.location - 1] = '=E' + row + '&" "&F' + row + '&" - "&G' + row;
+  v[C.face - 1] = rec.face || ''; v[C.substrate - 1] = rec.substrate || '';
+  v[C.qty - 1] = Math.max(1, Math.min(99, Number(rec.qty) || 1)); v[C.unit - 1] = 0;
+  v[C.price - 1] = '=ROUND(M' + row + '*N' + row + '*(1+P' + row + ')+Q' + row + ',0)';
+  v[C.notes - 1] = 'Client request (' + user.name + (user.company ? ', ' + user.company : '') + '). ' + String(rec.notes || '').slice(0, 500);
+  v[C.before - 1] = photos.join('\n');
+  v[C.status - 1] = 'Requested';
+  v[C.recordKey - 1] = rec.recordKey;
+  v[C.clientType - 1] = String(rec.clientType || '').slice(0, 60);
+  sh.getRange(row, 1, 1, NCOLS).setValues([v]);
   addLocationIfNew_(rec, user);
   return { ok: true, code: code, changed: changed };
 }
@@ -272,6 +356,11 @@ function updatePen_(user, rec) {
     if (f.extra !== undefined) set(C.extra, Number(f.extra) || 0);
   }
   if (status === 'Done') { set(C.vp, f.vp); if (f.doneDate) set(C.doneDate, new Date(f.doneDate)); }
+  if (rec.accept && status === 'Requested') {
+    if (!sh.getRange(row, C.product).getValue()) throw new Error(rec.code + ' needs a product before it can go in the bank');
+    sh.getRange(row, C.status).setValue('Scouted');
+    appendLines_(sh, row, C.notes, ['Priced by ' + user.name + ' ' + Utilities.formatDate(new Date(), 'Australia/Melbourne', 'd/M/yy')]);
+  }
 
   const r = sh.getRange(row, 1, 1, NCOLS).getValues()[0];
   const folder = locationFolder_(r[C.site - 1], r[C.building - 1], r[C.level - 1], r[C.room - 1]);
@@ -629,6 +718,22 @@ function json_(obj) {
 function addUser() {
   const NAME = 'Jeff';
   const EMAIL = 'jeff@veridianprojects.com.au';
+  makeUser_(NAME, EMAIL, 'staff', '');
+}
+
+/**
+ * Create a CLIENT login (e.g. a Ventia supervisor). Set NAME, EMAIL and COMPANY, select addClient, press Run.
+ * Clients can only log penetrations and see their own requests. No prices, no other jobs.
+ * To switch a client off, set Active (column D) to No on the Users tab.
+ */
+function addClient() {
+  const NAME = 'Client name';
+  const EMAIL = 'client@example.com';
+  const COMPANY = 'Ventia';
+  makeUser_(NAME, EMAIL, 'client', COMPANY);
+}
+
+function makeUser_(NAME, EMAIL, ROLE, COMPANY) {
 
   const url = String(settings_()['Web app URL'] || '').trim();
   if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)) {
@@ -640,10 +745,11 @@ function addUser() {
   const data = sh.getDataRange().getValues();
   let row = -1;
   for (let i = 1; i < data.length; i++) if (String(data[i][0]).toLowerCase() === NAME.toLowerCase()) { row = i + 1; break; }
-  const values = [[NAME, EMAIL, sha256_(key), 'Yes', new Date()]];
-  if (row > 0) sh.getRange(row, 1, 1, 5).setValues(values); else sh.appendRow(values[0]);
+  if (!sh.getRange(1, 6).getValue()) sh.getRange(1, 6, 1, 2).setValues([['Role', 'Company']]);
+  const values = [[NAME, EMAIL, sha256_(key), 'Yes', new Date(), ROLE, COMPANY]];
+  if (row > 0) sh.getRange(row, 1, 1, 7).setValues(values); else sh.appendRow(values[0]);
 
-  Logger.log('Setup code for ' + NAME + ': ' + key);
+  Logger.log((ROLE === 'client' ? 'Client setup code for ' : 'Setup code for ') + NAME + ': ' + key);
 }
 
 /** Run once from the editor to approve Drive, Docs and Sheets permissions. */

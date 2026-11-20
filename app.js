@@ -1,7 +1,7 @@
 /* Frontline Compliance and Fire - passive fire app (offline-first PWA) */
 'use strict';
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const LS = { setup: 'pf_setup', config: 'pf_config', loc: 'pf_loc', draft: 'pf_draft', localLocs: 'pf_local_locs' };
 const FACES = ['Wall', 'Floor', 'Ceiling / slab'];
@@ -9,7 +9,7 @@ const SITES = ['Austin', 'Repat'];
 const DEFAULT_BUILDINGS = { Austin: ['AT', 'HSB', 'LTB'], Repat: ['NW', 'Cent', 'CPU', 'Coral'] };
 const OTHER = 'Other…';
 const OPEN = ['Allocated', 'Quoted', 'PO Received'];
-const PRICE_EDITABLE = ['Scouted', 'Allocated'];
+const PRICE_EDITABLE = ['Requested', 'Scouted', 'Allocated'];
 const MAX_PHOTO_PX = 1600;
 const JPEG_QUALITY = 0.72;
 
@@ -74,7 +74,7 @@ const state = {
 
 function freshDraft(keep) {
   const today = new Date().toISOString().slice(0, 10);
-  const d = { photo: '', beforePhoto: '', face: 'Wall', substrate: '', type: '', size: '', product: '', qty: 1, access: '', notes: '', customUnit: '', doneDate: today, vp: '' };
+  const d = { photo: '', beforePhoto: '', face: 'Wall', substrate: '', type: '', size: '', product: '', qty: 1, access: '', notes: '', customUnit: '', clientType: '', doneDate: today, vp: '' };
   return keep ? Object.assign(d, keep) : d;
 }
 state.draft = Object.assign(freshDraft(), store.get(LS.draft, {}));
@@ -106,6 +106,8 @@ function buildingList(site) {
   const b = state.config && state.config.buildings && state.config.buildings[site];
   return (b && b.length) ? b : (DEFAULT_BUILDINGS[site] || []);
 }
+const isClient = () => !!(state.config && state.config.role === 'client');
+function clientTypes() { return (state.config && state.config.clientTypes) || ['Cables', 'Cable tray', 'Metal pipe', 'Plastic pipe', 'Duct', 'Other']; }
 function rates() { return (state.config && state.config.rates) || []; }
 function accessOpts() { return (state.config && state.config.access && state.config.access.length) ? state.config.access : [{ name: 'Standard (floor level)', loading: 0, extra: 0 }]; }
 function substrates() { return (state.config && state.config.substrates) || ['Plasterboard', 'Block / brick', 'Concrete', 'Other']; }
@@ -291,7 +293,15 @@ function render() {
   if (!state.setup) { $('#nav').classList.add('hidden'); main.innerHTML = renderSetup(); bindSetup(); return; }
   $('#nav').classList.remove('hidden');
   if (!state.config) { main.innerHTML = `<div class="card"><h2>Loading</h2><p>Connecting to the master sheet…</p><button class="big" id="retry">Try again</button></div>`; $('#retry').onclick = () => refreshConfig(); return; }
-  const views = { home: [renderHome, bindHome], loc: [renderLoc, bindLoc], peno: [renderPeno, bindPeno], saved: [renderSaved, bindSaved],
+  const navB = $('nav [data-tab="browse"]');
+  navB.textContent = isClient() ? 'My requests' : 'Find';
+  if (isClient()) {
+    const cv = { home: [renderClientHome, bindClientHome], loc: [renderLoc, bindLoc], peno: [renderClientPeno, bindClientPeno],
+      saved: [renderClientSaved, bindClientSaved], browse: [renderClientList, bindClientList], queue: [renderQueue, bindQueue] };
+    const [cr, cb] = cv[state.screen] || cv.home;
+    main.innerHTML = cr(); cb(); updateHeader(); return;
+  }
+  const views = { requests: [renderRequests, bindRequests], home: [renderHome, bindHome], loc: [renderLoc, bindLoc], peno: [renderPeno, bindPeno], saved: [renderSaved, bindSaved],
     jobs: [renderJobs, bindJobs], browse: [renderBrowse, bindBrowse], edit: [renderEdit, bindEdit], queue: [renderQueue, bindQueue] };
   const [r, b] = views[state.screen] || views.home;
   main.innerHTML = r(); b();
@@ -341,6 +351,7 @@ const ICONS = {
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   history: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>',
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>',
+  inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13h5l1.5 3h5L16 13h5"/><path d="M5.5 5h13L21 13v6H3v-6z"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>',
 };
 
@@ -348,6 +359,7 @@ function renderHome() {
   const recs = records();
   const scouted = recs.filter(r => r.status === 'Scouted');
   const open = recs.filter(r => OPEN.includes(r.status));
+  const reqs = recs.filter(r => r.status === 'Requested');
   const queuedNew = state.queue.filter(q => q.action === 'submit' && q.record.mode !== 'old');
   const bank = scouted.reduce((s, r) => s + r.price, 0) + queuedNew.reduce((s, q) => s + q.price, 0);
   const n = scouted.length + queuedNew.length;
@@ -359,6 +371,7 @@ function renderHome() {
   <button class="tile primary" data-go="new"><span class="ico">${ICONS.plus}</span><span><strong>Add new</strong><span class="d">Scout penetrations to quote</span></span></button>
   <button class="tile" data-go="old"><span class="ico">${ICONS.history}</span><span><strong>Add old</strong><span class="d">Log work already done</span></span></button>
   <button class="tile" data-go="jobs"><span class="ico">${ICONS.check}</span><span><strong>Completed</strong><span class="d">Mark jobs done with an after photo</span></span>${open.length ? `<span class="count">${open.length}</span>` : ''}</button>
+  ${reqs.length ? `<button class="tile" data-go="requests"><span class="ico">${ICONS.inbox}</span><span><strong>Client requests</strong><span class="d">Logged by the client. Price them into the bank.</span></span><span class="count">${reqs.length}</span></button>` : ''}
   <button class="tile" data-go="browse"><span class="ico">${ICONS.search}</span><span><strong>Find and edit</strong><span class="d">Search by code, location or quote</span></span></button>`;
 }
 
@@ -384,6 +397,7 @@ function roomStats(l) {
 }
 
 function roomBanner(l) {
+  if (isClient()) return '';
   const t = roomStats(l);
   const min = state.config.settings.poMin, max = state.config.settings.poMax;
   const cls = t.v < min ? 'low' : t.v > max ? 'high' : 'good';
@@ -406,7 +420,7 @@ function renderLoc() {
   const list = buildingList(L.site);
   const isOther = !!L.building && !list.some(b => norm(b) === norm(L.building));
   const other = state.otherBuilding || isOther;
-  return `<div class="card"><h2>${state.mode === 'old' ? 'Where was the work done?' : 'Where are you scouting?'}</h2>
+  return `<div class="card"><h2>${isClient() ? 'Where is it?' : state.mode === 'old' ? 'Where was the work done?' : 'Where are you scouting?'}</h2>
     <div class="chips">${SITES.map(s => `<button class="chip ${L.site === s ? 'on' : ''}" data-site="${s}">${s}</button>`).join('')}</div>
     <div class="row">
       <div><label>Building</label>
@@ -670,11 +684,13 @@ function renderBrowse() {
 function bindBrowse() {
   const s = $('#search');
   s.oninput = () => { state.search = s.value; clearTimeout(bindBrowse._t); bindBrowse._t = setTimeout(() => { render(); const n = $('#search'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250); };
-  $$('[data-edit]').forEach(b => b.onclick = () => {
-    const r = records().find(x => x.code === b.dataset.edit);
-    state.edit = { orig: r, d: { face: r.face, substrate: r.substrate, type: r.type, size: r.size, product: r.product, qty: r.qty, access: r.access, notes: r.notes, unit: r.unit, customUnit: r.unit, vp: r.vp, doneDate: (r.doneDate || '').slice(0, 10) }, newBefore: '', newAfter: '', confirmRemove: false };
-    go('edit', 'browse');
-  });
+  $$('[data-edit]').forEach(b => b.onclick = () => openEdit(b.dataset.edit, 'browse'));
+}
+
+function openEdit(code, from) {
+    const r = records().find(x => x.code === code);
+    state.edit = { from, orig: r, d: { face: r.face, substrate: r.substrate, type: r.type, size: r.size, product: r.product, qty: r.qty, access: r.access, notes: r.notes, unit: r.unit, customUnit: r.unit, vp: r.vp, doneDate: (r.doneDate || '').slice(0, 10) }, newBefore: '', newAfter: '', confirmRemove: false };
+    go('edit', from === 'requests' ? 'home' : 'browse');
 }
 
 function renderEdit() {
@@ -686,7 +702,7 @@ function renderEdit() {
   return `<button class="ghost" id="back">‹ Back</button>
   <div class="card" style="margin-top:10px"><span class="tag md">${esc(r.code)}</span>
     <p class="muted">${esc(r.site)} · ${esc(r.location)}<br>Status: <strong>${esc(r.status)}</strong>${r.vp ? ' · ' + esc(r.vp) : ''}${r.month ? ' · ' + esc(r.month) : ''}<br>
-    Scouted ${fmtDate(r.scoutedAt)} by ${esc(r.scoutedBy)}${r.doneDate ? ` · done ${fmtDate(r.doneDate)} by ${esc(r.doneBy)}` : ''}</p>
+    ${r.status === 'Requested' ? `Client says: <strong>${esc(r.clientType || 'not given')}</strong> × ${r.qty}<br>` : ''}Scouted ${fmtDate(r.scoutedAt)} by ${esc(r.scoutedBy)}${r.doneDate ? ` · done ${fmtDate(r.doneDate)} by ${esc(r.doneBy)}` : ''}</p>
     <div class="row">${r.before ? `<a class="ghost" href="${esc(r.before)}" target="_blank" rel="noopener">Before photo${r.beforeCount > 1 ? 's' : ''} (${r.beforeCount})</a>` : ''}
       ${r.after ? `<a class="ghost" href="${esc(r.after)}" target="_blank" rel="noopener">After photo${r.afterCount > 1 ? 's' : ''} (${r.afterCount})</a>` : ''}</div>
   </div>
@@ -699,14 +715,14 @@ function renderEdit() {
       <div><label>Quote number</label><input id="vp" value="${esc(d.vp)}" autocapitalize="characters"></div></div>` : ''}
   </div>
   <div class="card">${priceLocked ? '' : `<div class="price"><span>Price (ex GST)</span><strong>${money(p.total)}</strong></div>`}
-    <button class="big" id="saveEdit">Save changes</button>
+    <button class="big" id="saveEdit">${r.status === 'Requested' ? 'Price it and add to the bank' : 'Save changes'}</button>
     ${PRICE_EDITABLE.includes(r.status) ? `<button class="ghost danger" id="remove" style="margin-top:10px;width:100%">${e.confirmRemove ? 'Tap again to remove' : 'Remove this penetration'}</button>` : ''}
   </div>`}`;
 }
 
 function bindEdit() {
   const e = state.edit; if (!e) return bindBrowse();
-  $('#back').onclick = () => { state.edit = null; go('browse', 'browse'); };
+  $('#back').onclick = () => { const back = state.edit.from || 'browse'; state.edit = null; go(back, back === 'requests' ? 'home' : 'browse'); };
   if (e.orig.status === 'Invoiced') return;
   $$('[data-shot]').forEach(b => b.onclick = () => takePhoto(b.dataset.shot));
   bindPenoFields(e.d, () => render());
@@ -725,15 +741,18 @@ function bindEdit() {
       if (!d.product) { toast('Pick a product first'); return; }
     }
     if (r.status === 'Done') { if (d.vp !== r.vp) fields.vp = d.vp; if (d.doneDate && d.doneDate !== (r.doneDate || '').slice(0, 10)) fields.doneDate = d.doneDate; }
-    if (!Object.keys(fields).length && !e.newBefore && !e.newAfter) { toast('No changes'); return; }
+    const accept = r.status === 'Requested';
+    if (!accept && !Object.keys(fields).length && !e.newBefore && !e.newAfter) { toast('No changes'); return; }
     const recordKey = uid();
-    await db.put({ recordKey, action: 'update', createdAt: Date.now(), price: 0, label: `Edit · ${r.code}`,
-      record: { recordKey, code: r.code, fields, photos: e.newBefore ? [e.newBefore] : [], afterPhotos: e.newAfter ? [e.newAfter] : [] } });
+    await db.put({ recordKey, action: 'update', createdAt: Date.now(), price: 0, label: `${accept ? 'Price' : 'Edit'} · ${r.code}`,
+      record: { recordKey, code: r.code, fields, accept, photos: e.newBefore ? [e.newBefore] : [], afterPhotos: e.newAfter ? [e.newAfter] : [] } });
     Object.assign(r, fields);
+    if (accept) r.status = 'Scouted';
     if (fields.unit !== undefined || fields.qty !== undefined || fields.access !== undefined) r.price = priceOf(Object.assign({}, r, { customUnit: r.unit })).total;
     store.set(LS.config, state.config);
     state.queue = await db.all();
-    state.edit = null; toast(`${r.code} updated`); go('browse', 'browse');
+    const back = e.from || 'browse';
+    state.edit = null; toast(accept ? `${r.code} added to the bank` : `${r.code} updated`); go(back, back === 'requests' ? 'home' : 'browse');
     if (navigator.onLine) sync();
   };
   const rm = $('#remove');
@@ -748,6 +767,131 @@ function bindEdit() {
     if (navigator.onLine) sync();
   };
 }
+
+/* ---- staff: client requests to price ---- */
+
+function renderRequests() {
+  const list = records().filter(r => r.status === 'Requested');
+  if (!list.length) return `<button class="ghost" id="back">‹ Home</button><div class="card" style="margin-top:10px"><h2>Client requests</h2><p>Nothing waiting. New ones show up here when a client logs a penetration.</p></div>`;
+  const groups = {};
+  list.forEach(r => { const g = `${r.site} · ${r.location}`; (groups[g] = groups[g] || []).push(r); });
+  return `<button class="ghost" id="back">‹ Home</button>
+    <div class="card" style="margin-top:10px"><h2>Client requests</h2><p class="muted">${list.length} to price. Tap one, pick the product and access, then add it to the bank. It's then planned into POs like anything we scout.</p></div>
+    ${Object.keys(groups).sort().map(g => `<div class="card"><div class="group">${esc(g)}</div>
+      ${groups[g].map(r => `<button class="item btn" data-req="${esc(r.code)}"><div class="grow"><div class="title"><span class="tag">${esc(r.code)}</span> ${esc(r.clientType || 'Penetration')} × ${r.qty}</div>
+        <div class="muted">${esc(r.face)}${r.substrate ? ' · ' + esc(r.substrate) : ''} · from ${esc(r.scoutedBy)} ${fmtDate(r.scoutedAt)}${r.before ? ' · photo' : ''}</div></div><span class="muted">›</span></button>`).join('')}</div>`).join('')}`;
+}
+
+function bindRequests() {
+  $('#back').onclick = () => go('home', 'home');
+  $$('[data-req]').forEach(b => b.onclick = () => openEdit(b.dataset.req, 'requests'));
+}
+
+/* ---- client screens (no prices, own requests only) ---- */
+
+function renderClientHome() {
+  const mine = records();
+  const waiting = state.queue.filter(q => q.action === 'request').length;
+  const open = mine.filter(r => r.status !== 'Fixed').length;
+  return `
+  <div class="bank"><p class="hello">Hi ${esc(state.config.user)}${state.config.company ? ', ' + esc(state.config.company) : ''}</p>
+    <div class="amount">${open + waiting}</div>
+    <p class="sub">open penetration request${open + waiting === 1 ? '' : 's'} with Frontline${waiting ? ` (${waiting} still to upload)` : ''}</p></div>
+  <button class="tile primary" data-go="new"><span class="ico">${ICONS.plus}</span><span><strong>Log a penetration</strong><span class="d">Location, wall or ceiling, and what's going through it</span></span></button>
+  <button class="tile" data-go="browse"><span class="ico">${ICONS.search}</span><span><strong>My requests</strong><span class="d">See what you've logged and where it's up to</span></span></button>`;
+}
+
+function bindClientHome() {
+  $$('[data-go]').forEach(b => b.onclick = () => {
+    if (b.dataset.go === 'new') {
+      state.mode = 'new';
+      state.draft = freshDraft({ face: state.draft.face, substrate: state.draft.substrate });
+      saveDraft(); go(locReady(state.loc) ? 'peno' : 'loc');
+    } else go('browse', 'browse');
+  });
+}
+
+function renderClientPeno() {
+  const d = state.draft, L = state.loc;
+  const ready = d.face && d.clientType;
+  return `
+  <div class="locbar"><div><strong>${esc(locLabel(L))}</strong><br><span class="muted">${esc(L.site)}</span></div>
+    <button class="ghost" id="chLoc">Change</button></div>
+  <div class="card"><h2>Photo <span class="muted">(optional, helps us quote)</span></h2>${photoBlock(d.photo, 'photo', 'Take photo')}</div>
+  <div class="card"><h2>What is it?</h2>
+    <label>Where is it?</label>
+    <div class="chips">${FACES.map(f => `<button class="chip ${d.face === f ? 'on' : ''}" data-face="${f}">${f}</button>`).join('')}</div>
+    <label>Wall / ceiling type <span class="muted">(if you know)</span></label>
+    <div class="chips">${substrates().map(x => `<button class="chip ${d.substrate === x ? 'on' : ''}" data-sub="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+    <label>What's going through it?</label>
+    <div class="chips">${clientTypes().map(x => `<button class="chip ${d.clientType === x ? 'on' : ''}" data-ct="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+    <label>How many?</label>
+    <div class="stepper"><button id="qMinus">−</button><span>${d.qty}</span><button id="qPlus">+</button></div>
+    <label>Notes</label>
+    <textarea id="notes" placeholder="e.g. above ceiling tile near door, needs ladder">${esc(d.notes)}</textarea>
+  </div>
+  <div class="card"><button class="big" id="saveBtn" ${ready ? '' : 'disabled'}>Send to Frontline</button>
+    ${ready ? '' : `<p class="muted">Pick where it is and what's going through it.</p>`}</div>`;
+}
+
+function bindClientPeno() {
+  const d = state.draft;
+  const ch = () => { d.notes = $('#notes').value; saveDraft(); render(); };
+  $('#chLoc').onclick = () => go('loc');
+  $$('[data-shoot]').forEach(b => b.onclick = () => takePhoto(b.dataset.shoot));
+  $$('[data-retake]').forEach(b => b.onclick = () => takePhoto(b.dataset.retake));
+  $$('[data-face]').forEach(b => b.onclick = () => { d.face = b.dataset.face; ch(); });
+  $$('[data-sub]').forEach(b => b.onclick = () => { d.substrate = d.substrate === b.dataset.sub ? '' : b.dataset.sub; ch(); });
+  $$('[data-ct]').forEach(b => b.onclick = () => { d.clientType = b.dataset.ct; ch(); });
+  $('#qMinus').onclick = () => { d.qty = Math.max(1, d.qty - 1); ch(); };
+  $('#qPlus').onclick = () => { d.qty = Math.min(99, d.qty + 1); ch(); };
+  $('#notes').oninput = e => { d.notes = e.target.value; saveDraft(); };
+  $('#saveBtn').onclick = async () => {
+    const L = state.loc;
+    d.notes = $('#notes').value;
+    const { code, roomNo } = makeCode(L);
+    const recordKey = uid();
+    const record = { recordKey, code, roomNo, capturedAt: new Date().toISOString(),
+      site: L.site, building: L.building, level: L.level, room: L.room,
+      face: d.face, substrate: d.substrate, clientType: d.clientType, qty: d.qty, notes: d.notes, photos: d.photo ? [d.photo] : [] };
+    await db.put({ recordKey, action: 'request', record, createdAt: Date.now(), price: 0, label: `${code} · ${locLabel(L)} · ${d.clientType} × ${d.qty}` });
+    state.queue = await db.all();
+    state.lastSaved = { code, keep: { face: d.face, substrate: d.substrate, clientType: d.clientType, qty: d.qty } };
+    state.draft = freshDraft({ face: d.face, substrate: d.substrate });
+    saveDraft(); go('saved');
+    if (navigator.onLine) sync();
+  };
+}
+
+function renderClientSaved() {
+  const s = state.lastSaved || {};
+  return `<div class="card saved"><h2>Sent. Thanks.</h2>
+    <p>Your reference is</p><span class="tag xl">${esc(s.code)}</span>
+    <p class="muted">${esc(locLabel(state.loc))}. If there's no signal it uploads when you're back in range.</p></div>
+    <button class="big" id="sameAgain" style="margin-top:12px">Same again, new photo</button>
+    <button class="big secondary" id="another" style="margin-top:10px">Log another here</button>
+    <div class="row" style="margin-top:10px"><button class="ghost" id="newLoc">New location</button><button class="ghost" id="home">Home</button></div>`;
+}
+
+function bindClientSaved() {
+  $('#sameAgain').onclick = () => { state.draft = freshDraft(state.lastSaved.keep); saveDraft(); go('peno'); takePhoto('photo'); };
+  $('#another').onclick = () => go('peno');
+  $('#newLoc').onclick = () => go('loc');
+  $('#home').onclick = () => go('home', 'home');
+}
+
+function renderClientList() {
+  const list = records().slice().reverse();
+  const waiting = state.queue.filter(q => q.action === 'request');
+  return `<div class="card"><h2>My requests</h2>
+    <p class="muted">${list.length} logged${waiting.length ? ` · ${waiting.length} waiting to upload` : ''}. Received → Being quoted → Quoted → Fixed.</p>
+    <button class="ghost" id="refresh">Refresh</button></div>
+    ${list.map(r => `<div class="card item"><div class="grow"><div class="title"><span class="tag">${esc(r.code)}</span> ${esc(r.clientType || 'Penetration')} × ${r.qty}</div>
+      <div class="muted">${esc(r.site)} · ${esc(r.location)} · ${esc(r.face)} · ${fmtDate(r.scoutedAt)}</div></div>
+      <span class="pill">${esc(r.status)}</span></div>`).join('')}`;
+}
+
+function bindClientList() { $('#refresh').onclick = () => refreshConfig(); }
 
 /* ---- waiting ---- */
 
