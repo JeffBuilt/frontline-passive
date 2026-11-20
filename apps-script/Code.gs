@@ -1,8 +1,8 @@
 /**
- * Frontline Compliance and Fire - passive fire backend (v1.6)
+ * Frontline Compliance and Fire - passive fire backend (v1.7)
  * Bound to the "Passive Fire Master" Google Sheet (Extensions > Apps Script).
  * Deploy > New deployment > Web app: Execute as "Me", Who has access "Anyone".
- * Phones need a setup code from addUser(); keys are stored only as SHA-256 hashes on the Users tab.
+ * Phones need a setup code (word + 4 digits) from addUser(); codes are stored only as SHA-256 hashes on the Users tab.
  * After pasting a new version: Deploy > Manage deployments > edit (pencil) > Version: New version > Deploy.
  */
 
@@ -52,11 +52,15 @@ function doPost(e) {
 
 function checkKey_(key) {
   if (!key) return null;
-  const hash = sha256_(String(key));
+  const cache = CacheService.getScriptCache();
+  const fails = Number(cache.get('KEY_FAILS') || 0);
+  if (fails >= 50) return null; // too many wrong codes this hour: pause all logins briefly
+  const hash = sha256_(String(key).trim().toLowerCase());
   const rows = rows_(SHEET.users);
   for (const r of rows) {
     if (String(r[2]) === hash && String(r[3]).toLowerCase() === 'yes') return { name: String(r[0]), email: String(r[1]) };
   }
+  cache.put('KEY_FAILS', String(fails + 1), 3600);
   return null;
 }
 
@@ -630,7 +634,8 @@ function addUser() {
   if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)) {
     throw new Error('Paste the Web app URL (ends in /exec) into the Settings tab, row "Web app URL", then run addUser again.');
   }
-  const key = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '').slice(0, 8);
+  const WORDS = 'ant apple arrow aspen badge banjo basin bear bee birch bison blaze bolt brick cabin cargo cedar chalk cod comet coral crane creek crow dawn deer delta denim dingo dove drift duck eagle echo elk ember emu fern fig flint fox frog galah gecko grove gull gum hare hawk hazel heron honey husky iron ivory ivy jay jetty kayak kelp kite kiwi koala lark laser lemon lilac lime lion lotus lynx mango maple mesa mint moose moss moth nova oak ocean olive onyx opal orbit orca otter owl panda pine pixel plum polar puma quill radar ram raven ray reef ridge river robin ruby sage scout seal shark slate stone storm swan swift tango tiger toad topaz torch tulip turbo umber wolf wren yak yarra zinc'.split(' ');
+  const key = WORDS[Math.floor(Math.random() * WORDS.length)] + String(1000 + Math.floor(Math.random() * 9000));
   const sh = sheet_(SHEET.users);
   const data = sh.getDataRange().getValues();
   let row = -1;
@@ -638,8 +643,7 @@ function addUser() {
   const values = [[NAME, EMAIL, sha256_(key), 'Yes', new Date()]];
   if (row > 0) sh.getRange(row, 1, 1, 5).setValues(values); else sh.appendRow(values[0]);
 
-  Logger.log('Setup code for ' + NAME + ' (copy everything on the next line):');
-  Logger.log(Utilities.base64EncodeWebSafe(JSON.stringify({ u: url, k: key })));
+  Logger.log('Setup code for ' + NAME + ': ' + key);
 }
 
 /** Run once from the editor to approve Drive, Docs and Sheets permissions. */

@@ -1,7 +1,8 @@
 /* Frontline Compliance and Fire - passive fire app (offline-first PWA) */
 'use strict';
 
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
+const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const LS = { setup: 'pf_setup', config: 'pf_config', loc: 'pf_loc', draft: 'pf_draft', localLocs: 'pf_local_locs' };
 const FACES = ['Wall', 'Floor', 'Ceiling / slab'];
 const SITES = ['Austin', 'Repat'];
@@ -301,29 +302,37 @@ function render() {
 
 function renderSetup() {
   return `<div class="card"><h2>Set up this device</h2>
-    <p>Paste the setup code Jeff sent you. You only do this once per phone or computer.</p>
-    <textarea id="code" placeholder="Setup code"></textarea>
+    <p>Type the setup code Jeff gave you, e.g. fox4821. You only do this once per phone or computer.</p>
+    <input id="code" autocapitalize="none" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Setup code" style="font-size:22px;letter-spacing:.04em">
     <p id="setupErr" class="err"></p>
-    <button class="big" id="saveSetup">Connect</button>
+    <button class="big" id="saveSetup" style="margin-top:6px">Connect</button>
     <p class="muted">Version ${APP_VERSION}</p></div>`;
 }
 
+function parseSetup(raw) {
+  const s = raw.trim();
+  if (/^[a-z]+\s*-?\s*\d{4}$/i.test(s)) return { u: SERVER_URL, k: s.replace(/[\s-]/g, '').toLowerCase() };
+  const b64 = s.replace(/-/g, '+').replace(/_/g, '/');
+  const obj = JSON.parse(atob(b64 + '==='.slice((b64.length + 3) % 4)));
+  if (!obj.u || !obj.k) throw new Error();
+  return obj;
+}
+
 function bindSetup() {
-  $('#saveSetup').onclick = async () => {
-    try {
-      const b64 = $('#code').value.trim().replace(/-/g, '+').replace(/_/g, '/');
-      const obj = JSON.parse(atob(b64 + '==='.slice((b64.length + 3) % 4)));
-      if (!obj.u || !obj.k) throw new Error();
-      state.setup = obj; store.set(LS.setup, obj);
-      $('#saveSetup').textContent = 'Connecting…';
-      if (!(await refreshConfig(true))) {
-        state.setup = null; store.del(LS.setup);
-        $('#setupErr').textContent = 'Could not connect. Check the code and that you have signal.';
-        $('#saveSetup').textContent = 'Connect'; return;
-      }
-      toast(`Welcome ${state.config.user}`); go('home', 'home');
-    } catch (e) { $('#setupErr').textContent = 'That code doesn\'t look right. Copy the whole line again.'; }
+  const go_ = async () => {
+    let obj;
+    try { obj = parseSetup($('#code').value); } catch (e) { $('#setupErr').textContent = 'That code doesn\'t look right. It should be a word and 4 numbers.'; return; }
+    state.setup = obj; store.set(LS.setup, obj);
+    $('#saveSetup').textContent = 'Connecting…';
+    if (!(await refreshConfig(true))) {
+      state.setup = null; store.del(LS.setup);
+      $('#setupErr').textContent = 'Could not connect. Check the code and that you have signal.';
+      $('#saveSetup').textContent = 'Connect'; return;
+    }
+    toast(`Welcome ${state.config.user}`); go('home', 'home');
   };
+  $('#saveSetup').onclick = go_;
+  $('#code').onkeydown = e => { if (e.key === 'Enter') go_(); };
 }
 
 /* ---- home ---- */
