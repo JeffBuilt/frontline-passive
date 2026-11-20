@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Veridian + Frontline</title>
+<title>Veridian + Frontline + Pulse</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --ink: #21334a; --ink2: #182739; --fire: #e8572a; --fire-dk: #c2410c; --vp: #0f6b5c; --vp-lt: #d6ece6;
+    --ink: #21334a; --ink2: #182739; --fire: #e8572a; --fire-dk: #c2410c; --vp: #0f6b5c; --vp-lt: #d6ece6; --pu: #6d3fc0; --pu-lt: #ebe2fb;
     --paid: #21334a; --inv: #4b6a8c; --done: #8fa6bf; --appr: #c5d2de; --pipe: #e3e8ed;
     --bg: #eef1f4; --card: #fff; --line: #dde2e7; --muted: #66727e; --text: #1b2733; --hivis: #ffd23f; --red: #c62828;
     --body: 'Barlow', system-ui, sans-serif; --display: 'Barlow Condensed', 'Barlow', system-ui, sans-serif;
@@ -25,6 +25,7 @@
   .vpmark { font: 700 24px/1 var(--display); letter-spacing: .14em; color: #fff; }
   .vpmark small { display: block; font: 600 11px var(--body); letter-spacing: .32em; color: #9fb3c5; margin-top: 4px; }
   .marks .plus { color: #6f859b; font: 600 22px var(--display); }
+  .vpmark.pulse { color: #c9b6f2; }
   .marks img { height: 38px; width: auto; display: block; }
   .top-r { display: flex; align-items: center; gap: 10px; color: #c9d3dd; font-size: 14px; }
   .btn-ghost { background: transparent; border: 1px solid #4a5f7a; color: #fff; border-radius: 999px; padding: 7px 14px; font-weight: 600; }
@@ -34,7 +35,7 @@
   .seg { display: inline-flex; background: #d9dee4; border-radius: 12px; padding: 3px; }
   .seg button { border: 0; background: none; border-radius: 9px; padding: 7px 13px; font-weight: 600; color: #4a5866; min-height: 36px; white-space: nowrap; }
   .seg button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(33,51,74,.18); }
-  .seg button.on.b-Veridian { color: var(--vp); } .seg button.on.b-Frontline { color: var(--fire-dk); }
+  .seg button.on.b-Veridian { color: var(--vp); } .seg button.on.b-Frontline { color: var(--fire-dk); } .seg button.on.b-Pulse { color: var(--pu); }
   select.period { border: 0; background: #d9dee4; border-radius: 12px; padding: 9px 12px; font: 600 15px var(--body); color: var(--ink); min-height: 42px; }
   .morebtn { border: 1px solid #c4ccd4; background: #fff; border-radius: 12px; padding: 8px 14px; font-weight: 600; min-height: 42px; }
   .morebtn b { background: var(--fire); color: #fff; border-radius: 999px; padding: 0 7px; font-size: 13px; margin-left: 4px; }
@@ -97,7 +98,7 @@
   .split { display: grid; gap: 16px; }
   .split-row { display: grid; grid-template-columns: 140px minmax(0, 1fr) 130px; gap: 14px; align-items: center; }
   .split-name { font: 700 22px var(--display); }
-  .split-name.Veridian { color: var(--vp); } .split-name.Frontline { color: var(--fire-dk); }
+  .split-name.Veridian { color: var(--vp); } .split-name.Frontline { color: var(--fire-dk); } .split-name.Pulse { color: var(--pu); }
   .split-name span { display: block; font: 500 13px var(--body); color: var(--muted); }
   .sbar { display: flex; height: 26px; border-radius: 8px; overflow: hidden; background: #f0f2f5; }
   .sbar span { display: block; height: 100%; }
@@ -124,7 +125,7 @@
   .pay-j div { color: var(--muted); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pay-v { text-align: right; font: 700 20px var(--display); font-variant-numeric: tabular-nums; }
   .tag { display: inline-block; font: 600 12px var(--body); border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 1px; }
-  .tag.Veridian { background: var(--vp-lt); color: var(--vp); } .tag.Frontline { background: #fde3d8; color: var(--fire-dk); }
+  .tag.Veridian { background: var(--vp-lt); color: var(--vp); } .tag.Frontline { background: #fde3d8; color: var(--fire-dk); } .tag.Pulse { background: var(--pu-lt); color: var(--pu); }
   .tag.late { background: #fde2e2; color: var(--red); }
   .tag.est { background: #eef1f4; color: var(--muted); }
 
@@ -176,7 +177,7 @@
   }
   @media (max-width: 600px) {
     .wrap { padding: 0 12px 50px; }
-    .marks img { height: 28px; } .vpmark { font-size: 18px; } .vpmark small { font-size: 9px; }
+    .marks { gap: 8px; } .marks img { height: 24px; } .vpmark { font-size: 15px; letter-spacing: .08em; } .vpmark small { font-size: 8px; letter-spacing: .2em; } .marks .plus { font-size: 16px; }
     .top-r .upd { display: none; }
     .hero { padding: 20px 18px; border-radius: 18px; }
     .hero-big { font-size: 64px; }
@@ -197,7 +198,7 @@
 </head>
 <body>
 <header class="top"><div class="wrap">
-  <div class="marks"><div class="vpmark">VERIDIAN<small>PROJECTS</small></div><span class="plus">+</span><img src="https://jeffbuilt.github.io/frontline-passive/logo-header.png" alt="Frontline Compliance and Fire"></div>
+  <div class="marks"><div class="vpmark">VERIDIAN<small>PROJECTS</small></div><span class="plus">+</span><img src="https://jeffbuilt.github.io/frontline-passive/logo-header.png" alt="Frontline Compliance and Fire"><span class="plus">+</span><div class="vpmark pulse">PULSE<small>IoT SENSORS</small></div></div>
   <div class="top-r"><span class="upd" id="upd"></span><button class="btn-ghost" id="refresh">Refresh</button></div>
 </div></header>
 <div class="filters"><div class="wrap" id="filters"></div></div>
@@ -218,7 +219,8 @@ const STAGES = [
 const PIPE = ['quoted', 'rfq', 'planned'];
 const stageOf = j => PIPE.includes(j.stage) ? 'pipe' : j.stage;
 const STATUS_GROUPS = [['paid', 'Paid'], ['invoiced', 'Invoiced'], ['done', 'Done'], ['approved', 'Approved'], ['quoted', 'Quoted'], ['rfq', 'RFQ'], ['planned', 'Planned']];
-const BIZ = { Veridian: { color: '#0f6b5c' }, Frontline: { color: '#e8572a' } };
+const BIZ = { Veridian: { color: '#0f6b5c', light: '#d6ece6', note: 'Filters, mechanical, reports', short: 'VP' }, Frontline: { color: '#e8572a', light: '#fde3d8', note: 'Passive fire, repairs, SIT', short: 'FL' }, Pulse: { color: '#6d3fc0', light: '#ebe2fb', note: 'IoT sensors and subscriptions', short: 'PU' } };
+const BIZ_NAMES = Object.keys(BIZ);
 
 const $ = s => document.querySelector(s), $$ = s => Array.from(document.querySelectorAll(s));
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -250,7 +252,7 @@ function periods() {
   ];
 }
 
-const F = { biz: 'Both', period: 'fy', from: '', to: '', cats: [], sites: [], statuses: [], q: '', panel: false, colourBy: 'stage', showJobs: innerWidth < 600 ? 25 : 60, animated: false };
+const F = { biz: 'Both', period: 'fy', from: '', to: '', cats: [], sites: [], statuses: [], q: '', panel: false, colourBy: 'biz', showJobs: innerWidth < 600 ? 25 : 60, animated: false };
 try { Object.assign(F, JSON.parse(localStorage.getItem('hq_f') || '{}'), { panel: false, showJobs: innerWidth < 600 ? 25 : 60, animated: false }); } catch (e) {}
 const saveF = () => { try { localStorage.setItem('hq_f', JSON.stringify({ biz: F.biz, period: F.period, from: F.from, to: F.to, cats: F.cats, sites: F.sites, statuses: F.statuses, colourBy: F.colourBy })); } catch (e) {} };
 
@@ -282,7 +284,7 @@ function renderFilters() {
   const sites = [...new Set(D.jobs.map(j => j.site))].sort();
   const n = F.cats.length + F.sites.length + F.statuses.length;
   $('#filters').innerHTML = `
-    <div class="seg" role="tablist" aria-label="Business">${['Both', 'Veridian', 'Frontline'].map(b => `<button class="${F.biz === b ? 'on' : ''} b-${b}" data-biz="${b}">${b === 'Both' ? 'Combined' : b}</button>`).join('')}</div>
+    <div class="seg" role="tablist" aria-label="Business">${['Both', ...BIZ_NAMES].map(b => `<button class="${F.biz === b ? 'on' : ''} b-${b}" data-biz="${b}">${b === 'Both' ? 'Combined' : b}</button>`).join('')}</div>
     <select class="period" id="period" aria-label="Period">${periods().map(p => `<option value="${p.k}" ${p.k === F.period ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
     <button class="morebtn" id="more">Filters${n ? `<b>${n}</b>` : ''}</button>
     <div class="fpanel ${F.panel ? 'on' : ''}">
@@ -314,7 +316,7 @@ function renderHero(list) {
   const earned = (s.paid || 0) + (s.invoiced || 0);
   const cashIn = D.cash.filter(c => c.month >= r.from && c.month <= r.to && c.month <= NOW() && inScopeRef(c.ref)).reduce((t, c) => t + c.net, 0);
   const pct = v => total ? (v / total * 100) : 0;
-  const who = F.biz === 'Both' ? 'Veridian + Frontline' : F.biz;
+  const who = F.biz === 'Both' ? 'Veridian + Frontline + Pulse' : F.biz;
   return `<section class="hero">
     <p class="hero-k">${esc(who)} · ${esc(r.k === 'custom' ? mShort(r.from) + ' to ' + mShort(r.to) : periods().find(p => p.k === r.k).name)}</p>
     <div class="hero-grid">
@@ -368,7 +370,8 @@ function barChart(id, months, cols, opts) {
   return `<div class="chart" id="${id}"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label)}">
     <defs><pattern id="hatch-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#eef1f4"/><rect width="2.6" height="6" fill="#aab7c3"/></pattern>
       <pattern id="hatchF-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fde3d8"/><rect width="2.6" height="6" fill="#e8572a"/></pattern>
-      <pattern id="hatchV-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#d6ece6"/><rect width="2.6" height="6" fill="#0f6b5c"/></pattern></defs>
+      <pattern id="hatchV-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#d6ece6"/><rect width="2.6" height="6" fill="#0f6b5c"/></pattern>
+      <pattern id="hatchP-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#ebe2fb"/><rect width="2.6" height="6" fill="#6d3fc0"/></pattern></defs>
     ${ticks.map(t => `<line class="grid" x1="${pl}" x2="${W}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${pl - 8}" y="${y(t) + 4}" text-anchor="end">${t ? k$(t) : '0'}</text>`).join('')}
     ${cols.map((c, i) => {
       const x = pl + i * cw + (cw - bw) / 2; let acc = 0;
@@ -391,11 +394,11 @@ function stageParts(list) {
 }
 function bizParts(list) {
   const out = [];
-  ['Veridian', 'Frontline'].forEach(b => {
+  BIZ_NAMES.forEach(b => {
     const l = list.filter(j => j.business === b);
     const firm = l.filter(j => stageOf(j) !== 'pipe').reduce((t, j) => t + j.price, 0);
     const pipe = l.filter(j => stageOf(j) === 'pipe').reduce((t, j) => t + j.price, 0);
-    out.push({ v: firm, color: BIZ[b].color, label: b + ', confirmed' }, { v: pipe, color: BIZ[b].color, hatch: b === 'Veridian' ? 'hatchV' : 'hatchF', label: b + ', pipeline', tipColor: BIZ[b].color });
+    out.push({ v: firm, color: BIZ[b].color, label: b + ', confirmed' }, { v: pipe, color: BIZ[b].color, hatch: { Veridian: 'hatchV', Frontline: 'hatchF', Pulse: 'hatchP' }[b], label: b + ', pipeline', tipColor: BIZ[b].color });
   });
   return out;
 }
@@ -406,7 +409,7 @@ function renderIncome(list) {
   const past = cols.filter(c => c.m < NOW());
   const avg = past.length ? past.reduce((t, c) => t + c.total, 0) / past.length : 0;
   const key = byStage ? STAGES.map(st => `<span><i class="${st.hatch ? 'hatch' : ''}" style="${st.hatch ? '' : 'background:' + st.hex}"></i>${esc(st.name)}</span>`).join('')
-    : `<span><i style="background:#0f6b5c"></i>Veridian</span><span><i class="hatch" style="background:repeating-linear-gradient(135deg,#0f6b5c 0 3px,#d6ece6 3px 6px)"></i>Veridian pipeline</span><span><i style="background:#e8572a"></i>Frontline</span><span><i style="background:repeating-linear-gradient(135deg,#e8572a 0 3px,#fde3d8 3px 6px)"></i>Frontline pipeline</span>`;
+    : BIZ_NAMES.map(b => `<span><i style="background:${BIZ[b].color}"></i>${b}</span><span><i style="background:repeating-linear-gradient(135deg,${BIZ[b].color} 0 3px,${BIZ[b].light} 3px 6px)"></i>${b} pipeline</span>`).join('');
   return `<section class="panel"><div class="p-head"><div><h3>Income by month</h3><p>Expected for each work month, and how much of it is real money yet${avg ? ` · ${k$(avg)} a month on average so far` : ''}</p></div>
     ${F.biz === 'Both' ? `<div class="p-tools"><div class="seg">${[['stage', 'By status'], ['biz', 'By business']].map(([k, l]) => `<button class="${F.colourBy === k ? 'on' : ''}" data-colour="${k}">${l}</button>`).join('')}</div></div>` : ''}</div>
     ${barChart('inc', months, cols, { label: 'Expected and actual income by month' })}
@@ -442,13 +445,13 @@ function renderCash(list) {
 function renderSplit(list) {
   if (F.biz !== 'Both') return '';
   const tot = list.reduce((t, j) => t + j.price, 0) || 1;
-  const rows = ['Veridian', 'Frontline'].map(b => {
+  const rows = BIZ_NAMES.map(b => {
     const l = list.filter(j => j.business === b), s = sumBy(l, stageOf), v = l.reduce((t, j) => t + j.price, 0);
-    return `<div class="split-row"><div class="split-name ${b}">${b}<span>${b === 'Frontline' ? 'Passive fire, repairs, SIT' : 'Filters, IoT, mechanical'}</span></div>
-      <div class="sbar" style="width:${Math.max(4, v / tot * 100)}%">${STAGES.map(st => `<span class="${st.hatch ? 'hatch' : ''}" style="width:${v ? (s[st.k] || 0) / v * 100 : 0}%;${st.hatch ? '' : 'background:' + (b === 'Frontline' && st.k === 'paid' ? '#e8572a' : b === 'Veridian' && st.k === 'paid' ? '#0f6b5c' : st.hex)}"></span>`).join('')}</div>
+    return `<div class="split-row"><div class="split-name ${b}">${b}<span>${BIZ[b].note}</span></div>
+      <div class="sbar" style="width:${Math.max(4, v / tot * 100)}%">${STAGES.map(st => `<span class="${st.hatch ? 'hatch' : ''}" style="width:${v ? (s[st.k] || 0) / v * 100 : 0}%;${st.hatch ? '' : 'background:' + (st.k === 'paid' ? BIZ[b].color : st.hex)}"></span>`).join('')}</div>
       <div class="split-v">${k$(v)}<span>${Math.round(v / tot * 100)}% of the total</span></div></div>`;
   }).join('');
-  return `<section class="panel"><div class="p-head"><div><h3>Veridian and Frontline</h3><p>Same period and filters. Solid colour is paid, then invoiced, done, approved and pipeline.</p></div></div><div class="split">${rows}</div></section>`;
+  return `<section class="panel"><div class="p-head"><div><h3>Veridian, Frontline and Pulse</h3><p>Same period and filters. Each business's own colour is paid, then invoiced, done, approved and pipeline.</p></div></div><div class="split">${rows}</div></section>`;
 }
 function rankPanel(title, note, list, keyFn, filterKey, nameFn) {
   const by = {};
@@ -492,7 +495,7 @@ function renderJobs(list) {
   let lastM = '', rows = '';
   shown.forEach(j => {
     if (j.month !== lastM) { lastM = j.month; rows += `<tr class="mhead"><td colspan="4">${mLong(j.month)}</td><td class="hide-s"></td><td class="num">${money(monthTot[j.month])}</td></tr>`; }
-    rows += `<tr><td><b>${esc(j.ref)}</b><span class="tag ${j.business}">${j.business === 'Frontline' ? 'FL' : 'VP'}</span></td><td>${esc(j.loc || '—')}<div class="muted">${esc(j.job)}</div></td>
+    rows += `<tr><td><b>${esc(j.ref)}</b><span class="tag ${j.business}">${BIZ[j.business].short}</span></td><td>${esc(j.loc || '—')}<div class="muted">${esc(j.job)}</div></td>
       <td class="hide-s">${esc(j.site === 'Unassigned' ? '' : j.site)}</td><td><span class="st ${j.stage}">${esc(j.status)}</span></td><td class="hide-s">${j.stage === 'invoiced' || j.stage === 'done' ? dShort(j.due) : ''}</td><td class="num">${money(j.price)}</td></tr>`;
   });
   return `<section class="panel"><div class="p-head"><div><h3>Jobs</h3><p>${l.length} jobs · ${money(l.reduce((t, j) => t + j.price, 0))}</p></div></div>

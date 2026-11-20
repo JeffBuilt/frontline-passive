@@ -62,7 +62,10 @@ function eomPlus_(y, m, days) { // end of month (y, m 1-12) + days -> yyyy-mm-dd
 }
 
 function business_(job, loc) {
-  return /passive|penetration|\bfire\b|fire repair|\bsit\b|interface test/i.test(job + ' ' + loc) ? 'Frontline' : 'Veridian';
+  const t = job + ' ' + loc;
+  if (/\biot\b|sensor|pulse/i.test(t)) return 'Pulse';
+  if (/passive|penetration|\bfire\b|fire repair|\bsit\b|interface test/i.test(t)) return 'Frontline';
+  return 'Veridian';
 }
 function category_(job) {
   const j = String(job || '').toLowerCase();
