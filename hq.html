@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --ink: #21334a; --ink2: #182739; --fire: #e8572a; --fire-dk: #c2410c; --vp: #2e7d64; --vp-lt: #dcefe8; --pu: #2f6db5; --pu-lt: #dfeaf7;
+    --ink: #21334a; --ink2: #182739; --fire: #e8572a; --fire-dk: #c2410c; --vp: #2e7d64; --vp-lt: #dcefe8; --pu: #0a62c4; --pu-lt: #dde9f8;
     --paid: #21334a; --inv: #4b6a8c; --done: #8fa6bf; --appr: #c5d2de; --pipe: #e3e8ed;
     --bg: #eef1f4; --card: #fff; --line: #dde2e7; --muted: #66727e; --text: #1b2733; --hivis: #ffd23f; --red: #c62828;
     --body: 'Barlow', system-ui, sans-serif; --display: 'Barlow Condensed', 'Barlow', system-ui, sans-serif;
@@ -28,7 +28,7 @@
   .vpmark.veridian { color: #8fd1b9; } .vpmark.pulse { color: #9cc3f0; }
 
   .marks img { height: 38px; width: auto; display: block; }
-  .marks img.lg-v { height: 34px; } .marks img.lg-p { height: 28px; }
+  .marks img.lg-v { height: 34px; } .marks img.lg-p { height: 36px; filter: invert(1) hue-rotate(180deg) saturate(1.4); }
   .top-r { display: flex; align-items: center; gap: 10px; color: #c9d3dd; font-size: 14px; }
   .btn-ghost { background: transparent; border: 1px solid #4a5f7a; color: #fff; border-radius: 999px; padding: 7px 14px; font-weight: 600; }
 
@@ -207,7 +207,7 @@
     .pstats { grid-template-columns: 1fr 1fr; } .pstats .main { grid-column: 1 / -1; } .pstat strong { font-size: 30px; }
     table.pt .hide-s { display: none; }
     .wrap { padding: 0 12px 50px; }
-    .marks { gap: 8px; }   .marks img { height: 22px; } .marks img.lg-v { height: 20px; } .marks img.lg-p { height: 16px; } .vpmark { font-size: 15px; letter-spacing: .08em; } .vpmark small { font-size: 8px; letter-spacing: .2em; } .marks .plus { font-size: 16px; }
+    .marks { gap: 8px; }   .marks img { height: 22px; } .marks img.lg-v { height: 20px; } .marks img.lg-p { height: 21px; } .vpmark { font-size: 15px; letter-spacing: .08em; } .vpmark small { font-size: 8px; letter-spacing: .2em; } .marks .plus { font-size: 16px; }
     .top-r .upd { display: none; }
     .hero { padding: 20px 18px; border-radius: 18px; }
     .hero-big { font-size: 64px; }
@@ -228,7 +228,7 @@
 </head>
 <body>
 <header class="top"><div class="wrap">
-  <div class="marks"><img class="lg-v" src="https://jeffbuilt.github.io/frontline-passive/brand/veridian-dark.webp" alt="Veridian Projects"><span class="plus">+</span><img src="https://jeffbuilt.github.io/frontline-passive/logo-header.png" alt="Frontline Compliance and Fire"><span class="plus">+</span><img class="lg-p" src="https://jeffbuilt.github.io/frontline-passive/brand/pulse-dark.webp" alt="Pulse"></div>
+  <div class="marks"><img class="lg-v" src="https://jeffbuilt.github.io/frontline-passive/brand/veridian-dark.webp" alt="Veridian Projects"><span class="plus">+</span><img src="https://jeffbuilt.github.io/frontline-passive/logo-header.png" alt="Frontline Compliance and Fire"><span class="plus">+</span><img class="lg-p" src="https://veridianpulse.com.au/wp-content/uploads/2025/09/Screenshot_2025-09-03_at_10.44.32_AM-removebg-preview.png" alt="Veridian Pulse"></div>
   <div class="top-r"><span class="upd" id="upd"></span><button class="btn-ghost" id="refresh">Refresh</button></div>
 </div></header>
 <div class="filters"><div class="wrap" id="filters"></div></div>
@@ -249,7 +249,7 @@ const STAGES = [
 const PIPE = ['quoted', 'rfq', 'planned'];
 const stageOf = j => PIPE.includes(j.stage) ? 'pipe' : j.stage;
 const STATUS_GROUPS = [['paid', 'Paid'], ['invoiced', 'Invoiced'], ['done', 'Done'], ['approved', 'Approved'], ['quoted', 'Quoted'], ['rfq', 'RFQ'], ['planned', 'Planned']];
-const BIZ = { Veridian: { color: '#2e7d64', light: '#dcefe8', note: 'Filters, mechanical, reports', short: 'VP' }, Frontline: { color: '#e8572a', light: '#fde3d8', note: 'Passive fire, repairs, SIT', short: 'FL' }, Pulse: { color: '#2f6db5', light: '#dfeaf7', note: 'IoT sensors and subscriptions', short: 'PU' } };
+const BIZ = { Veridian: { color: '#2e7d64', light: '#dcefe8', note: 'Filters, mechanical, reports', short: 'VP' }, Frontline: { color: '#e8572a', light: '#fde3d8', note: 'Passive fire, repairs, SIT', short: 'FL' }, Pulse: { color: '#0a62c4', light: '#dde9f8', note: 'IoT sensors and subscriptions', short: 'PU' } };
 const BIZ_NAMES = Object.keys(BIZ);
 
 const $ = s => document.querySelector(s), $$ = s => Array.from(document.querySelectorAll(s));
@@ -401,7 +401,7 @@ function barChart(id, months, cols, opts) {
     <defs><pattern id="hatch-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#eef1f4"/><rect width="2.6" height="6" fill="#aab7c3"/></pattern>
       <pattern id="hatchF-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fde3d8"/><rect width="2.6" height="6" fill="#e8572a"/></pattern>
       <pattern id="hatchV-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#dcefe8"/><rect width="2.6" height="6" fill="#2e7d64"/></pattern>
-      <pattern id="hatchP-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#dfeaf7"/><rect width="2.6" height="6" fill="#2f6db5"/></pattern></defs>
+      <pattern id="hatchP-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#dde9f8"/><rect width="2.6" height="6" fill="#0a62c4"/></pattern></defs>
     ${ticks.map(t => `<line class="grid" x1="${pl}" x2="${W}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${pl - 8}" y="${y(t) + 4}" text-anchor="end">${t ? k$(t) : '0'}</text>`).join('')}
     ${cols.map((c, i) => {
       const x = pl + i * cw + (cw - bw) / 2; let acc = 0;
