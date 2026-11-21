@@ -28,6 +28,7 @@
   .vpmark.veridian { color: #8fd1b9; } .vpmark.pulse { color: #9cc3f0; }
 
   .marks img { height: 38px; width: auto; display: block; }
+  .marks img.lg-v { height: 34px; } .marks img.lg-p { height: 28px; }
   .top-r { display: flex; align-items: center; gap: 10px; color: #c9d3dd; font-size: 14px; }
   .btn-ghost { background: transparent; border: 1px solid #4a5f7a; color: #fff; border-radius: 999px; padding: 7px 14px; font-weight: 600; }
 
@@ -206,7 +207,7 @@
     .pstats { grid-template-columns: 1fr 1fr; } .pstats .main { grid-column: 1 / -1; } .pstat strong { font-size: 30px; }
     table.pt .hide-s { display: none; }
     .wrap { padding: 0 12px 50px; }
-    .marks { gap: 8px; } .marks img { height: 24px; } .vpmark { font-size: 15px; letter-spacing: .08em; } .vpmark small { font-size: 8px; letter-spacing: .2em; } .marks .plus { font-size: 16px; }
+    .marks { gap: 8px; }   .marks img { height: 22px; } .marks img.lg-v { height: 20px; } .marks img.lg-p { height: 16px; } .vpmark { font-size: 15px; letter-spacing: .08em; } .vpmark small { font-size: 8px; letter-spacing: .2em; } .marks .plus { font-size: 16px; }
     .top-r .upd { display: none; }
     .hero { padding: 20px 18px; border-radius: 18px; }
     .hero-big { font-size: 64px; }
@@ -227,7 +228,7 @@
 </head>
 <body>
 <header class="top"><div class="wrap">
-  <div class="marks"><div class="vpmark veridian">VERIDIAN<small>PROJECTS</small></div><span class="plus">+</span><img src="https://jeffbuilt.github.io/frontline-passive/logo-header.png" alt="Frontline Compliance and Fire"><span class="plus">+</span><div class="vpmark pulse">PULSE<small>IoT SENSORS</small></div></div>
+  <div class="marks"><img class="lg-v" src="https://jeffbuilt.github.io/frontline-passive/brand/veridian-dark.webp" alt="Veridian Projects"><span class="plus">+</span><img src="https://jeffbuilt.github.io/frontline-passive/logo-header.png" alt="Frontline Compliance and Fire"><span class="plus">+</span><img class="lg-p" src="https://jeffbuilt.github.io/frontline-passive/brand/pulse-dark.webp" alt="Pulse"></div>
   <div class="top-r"><span class="upd" id="upd"></span><button class="btn-ghost" id="refresh">Refresh</button></div>
 </div></header>
 <div class="filters"><div class="wrap" id="filters"></div></div>
