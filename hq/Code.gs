@@ -1,8 +1,8 @@
 /**
  * Veridian + Frontline - business dashboard (HQ) v1.0
  *
- * A private web app: deploy as Execute as "Me", Who has access "Only myself".
- * Google sign-in is the login. It only READS the Projects register and the Frontline master sheet.
+ * A private web app: deploy as Execute as "Me", Who has access "Anyone within Veridian Projects".
+ * Google sign-in is the login, and only the emails in ALLOWED get in. It only READS the Projects register and the Frontline master sheet.
  *
  * The page design is fetched from GitHub Pages (hq.html) so it can be updated without editing this script.
  * The numbers are worked out here and handed to the page.
@@ -14,9 +14,21 @@ const PAGE_URL = 'https://jeffbuilt.github.io/frontline-passive/hq.html';
 const FIRST_YEAR = 2026;      // the register's first month block is in this year
 const PAY_DAYS = 45;          // payment terms: end of month + 45 days
 const TZ = 'Australia/Melbourne';
+const ALLOWED = ['jeff@veridianprojects.com.au', 'admin@veridianprojects.com.au']; // who can open the dashboard
+
+function allowed_() {
+  const me = String(Session.getActiveUser().getEmail() || '').toLowerCase();
+  return ALLOWED.indexOf(me) >= 0 ? me : '';
+}
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 
 function doGet(e) {
+  if (!allowed_()) {
+    const who = Session.getActiveUser().getEmail();
+    return HtmlService.createHtmlOutput('<div style="font:18px system-ui;padding:40px;max-width:520px;margin:auto"><h2>Not available</h2><p>This dashboard is private.' +
+      (who ? ' You are signed in as ' + who + '.' : '') + ' Ask Jeff for access.</p></div>').setTitle('Not available')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
   const fresh = e && e.parameter && e.parameter.refresh;
   const data = getData(!!fresh);
   let page = fetchPage_();
@@ -37,6 +49,7 @@ function fetchPage_() {
 
 /** Called by the page's Refresh button (google.script.run) and by doGet. */
 function getData(fresh) {
+  if (!allowed_()) throw new Error('Not available');
   const cache = CacheService.getScriptCache();
   if (!fresh) {
     const hit = cache.get('HQ_DATA');
@@ -210,6 +223,7 @@ function readRules_() {
 
 /** Called from the dashboard's Profit rules panel. */
 function saveRules(r) {
+  if (!allowed_()) throw new Error('Not available');
   const clean = { flat: {}, pct: {}, notes: (r && r.notes) || {}, split: [] };
   Object.keys((r && r.flat) || {}).forEach(k => { clean.flat[k] = Math.max(0, num_(r.flat[k])); });
   Object.keys((r && r.pct) || {}).forEach(k => { clean.pct[k] = Math.max(0, Math.min(100, num_(r.pct[k]))); });
