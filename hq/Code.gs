@@ -192,10 +192,10 @@ const DEFAULT_RULES = {
   pct: {                          // profit as % of revenue
     'Passive fire': 75,           // minus 10% overhead, minus 15% material
     'Air filters': 75,            // minus 25% material
-    'SIT': 40,
+    'SIT': 60,
     'Fire repairs': 75, 'Mechanical repairs': 75, 'Inspections and reports': 75, 'Kitchen': 75, 'Water filters': 75, 'Projects': 75,
   },
-  notes: { 'Passive fire': 'minus 10% overhead, minus 15% material', 'Air filters': 'minus 25% material', 'IoT sensors': 'flat per month', 'SIT': 'about 40%' },
+  notes: { 'Passive fire': 'minus 10% overhead, minus 15% material', 'Air filters': 'minus 25% material', 'IoT sensors': 'flat per month', 'SIT': 'about 60%' },
   split: [{ name: 'Jeff', pct: 50 }, { name: 'Dan', pct: 50 }],
 };
 
