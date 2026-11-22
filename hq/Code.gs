@@ -59,6 +59,7 @@ function getData(fresh) {
     ok: true, built: new Date().toISOString(), today: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'), payDays: PAY_DAYS,
     jobs: readRegister_(), cash: readPaymentBatches_(), frontline: readFrontline_(), rules: readRules_(),
   };
+  try { if (fresh) scanInvoices(5); out.materials = materialsInfo_(); } catch (e) { out.materials = { items: [], error: String(e) }; }
   const s = JSON.stringify(out);
   if (s.length < 95000) cache.put('HQ_DATA', s, 300);
   return out;
@@ -201,41 +202,194 @@ function readFrontline_() {
 /* ---------------- profit rules (editable from the dashboard) ---------------- */
 
 const DEFAULT_RULES = {
-  flat: { 'IoT sensors': 6000 },  // flat profit per month when there is sensor income that month
-  pct: {                          // profit as % of revenue
-    'Passive fire': 75,           // minus 10% overhead, minus 15% material
-    'Air filters': 75,            // minus 25% material
-    'SIT': 60,
-    'Fire repairs': 75, 'Mechanical repairs': 75, 'Inspections and reports': 75, 'Kitchen': 75, 'Water filters': 75, 'Projects': 75,
+  oh: 10,                          // % of the gross invoice transferred to overheads
+  pb: 10,                          // Ventia PB deduction % when the payment batch isn't known yet
+  flat: { 'IoT sensors': 6000 },   // recurring contract: flat amount left to split per month
+  mat: {                           // estimated materials as % of the job, used until real supplier costs are entered
+    'Passive fire': 15, 'Air filters': 25, 'Water filters': 25, 'SIT': 30,
+    'Fire repairs': 15, 'Mechanical repairs': 15, 'Inspections and reports': 5, 'Kitchen': 15, 'Projects': 15,
   },
-  notes: { 'Passive fire': 'minus 10% overhead, minus 15% material', 'Air filters': 'minus 25% material', 'IoT sensors': 'flat per month', 'SIT': 'about 60%' },
+  notes: { 'Passive fire': 'estimate until invoices are in', 'Air filters': 'estimate until invoices are in', 'IoT sensors': '$3k each a month', 'SIT': 'gives about 60% profit' },
   split: [{ name: 'Jeff', pct: 50 }, { name: 'Dan', pct: 50 }],
 };
 
 function readRules_() {
   try {
-    const raw = PropertiesService.getScriptProperties().getProperty('PROFIT_RULES');
+    const raw = PropertiesService.getScriptProperties().getProperty('RULES_V2');
     if (!raw) return DEFAULT_RULES;
     const r = JSON.parse(raw);
-    return { flat: Object.assign({}, DEFAULT_RULES.flat, r.flat), pct: Object.assign({}, DEFAULT_RULES.pct, r.pct), notes: Object.assign({}, DEFAULT_RULES.notes, r.notes), split: r.split || DEFAULT_RULES.split };
+    return {
+      oh: r.oh != null ? r.oh : DEFAULT_RULES.oh, pb: r.pb != null ? r.pb : DEFAULT_RULES.pb,
+      flat: Object.assign({}, DEFAULT_RULES.flat, r.flat), mat: Object.assign({}, DEFAULT_RULES.mat, r.mat),
+      notes: Object.assign({}, DEFAULT_RULES.notes, r.notes), split: r.split || DEFAULT_RULES.split,
+    };
   } catch (e) { return DEFAULT_RULES; }
 }
 
-/** Called from the dashboard's Profit rules panel. */
+/** Called from the dashboard's Rules panel. */
 function saveRules(r) {
   if (!allowed_()) throw new Error('Not available');
-  const clean = { flat: {}, pct: {}, notes: (r && r.notes) || {}, split: [] };
+  const pct = v => Math.max(0, Math.min(100, num_(v)));
+  const clean = { oh: pct(r && r.oh), pb: pct(r && r.pb), flat: {}, mat: {}, notes: (r && r.notes) || {}, split: [] };
   Object.keys((r && r.flat) || {}).forEach(k => { clean.flat[k] = Math.max(0, num_(r.flat[k])); });
-  Object.keys((r && r.pct) || {}).forEach(k => { clean.pct[k] = Math.max(0, Math.min(100, num_(r.pct[k]))); });
-  ((r && r.split) || []).forEach(p => { if (p && p.name) clean.split.push({ name: String(p.name).slice(0, 30), pct: Math.max(0, Math.min(100, num_(p.pct))) }); });
+  Object.keys((r && r.mat) || {}).forEach(k => { clean.mat[k] = pct(r.mat[k]); });
+  ((r && r.split) || []).forEach(p => { if (p && p.name) clean.split.push({ name: String(p.name).slice(0, 30), pct: pct(p.pct) }); });
   if (!clean.split.length) clean.split = DEFAULT_RULES.split;
-  PropertiesService.getScriptProperties().setProperty('PROFIT_RULES', JSON.stringify(clean));
+  PropertiesService.getScriptProperties().setProperty('RULES_V2', JSON.stringify(clean));
   CacheService.getScriptCache().remove('HQ_DATA');
   return readRules_();
 }
 
+/* ---------------- materials: sheet, Drive folder, invoice reading ---------------- */
+
+const SHARE_WITH = ['admin@veridianprojects.com.au'];
+const MAT_HEADERS = ['Date', 'Job ref', 'Supplier', 'Amount ex GST', 'Status', 'File', 'File ID', 'Notes', 'Added by', 'Added at'];
+
+function prop_(k, v) { const p = PropertiesService.getScriptProperties(); if (v === undefined) return p.getProperty(k); p.setProperty(k, v); return v; }
+function shareEdit_(item) { SHARE_WITH.forEach(e => { try { item.addEditor(e); } catch (err) {} }); }
+
+function hqFolder_() {
+  let id = prop_('HQ_FOLDER_ID');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }
+  const f = DriveApp.createFolder('Veridian HQ');
+  shareEdit_(f);
+  prop_('HQ_FOLDER_ID', f.getId());
+  return f;
+}
+function invoiceFolder_() {
+  let id = prop_('INV_FOLDER_ID');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) {} }
+  const f = hqFolder_().createFolder('Supplier invoices');
+  shareEdit_(f);
+  prop_('INV_FOLDER_ID', f.getId());
+  return f;
+}
+function matSheet_() {
+  let id = prop_('MAT_SHEET_ID');
+  if (id) { try { return SpreadsheetApp.openById(id).getSheets()[0]; } catch (e) {} }
+  const ss = SpreadsheetApp.create('Veridian HQ - Materials');
+  const sh = ss.getSheets()[0];
+  sh.setName('Materials');
+  sh.getRange(1, 1, 1, MAT_HEADERS.length).setValues([MAT_HEADERS]).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  const file = DriveApp.getFileById(ss.getId());
+  file.moveTo(hqFolder_());
+  shareEdit_(file);
+  prop_('MAT_SHEET_ID', ss.getId());
+  return sh;
+}
+
+function readMaterials_() {
+  const sh = matSheet_();
+  const rows = sh.getDataRange().getValues();
+  const out = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r[0] && !r[3] && !r[6]) continue;
+    out.push({
+      row: i + 1, date: r[0] instanceof Date ? Utilities.formatDate(r[0], TZ, 'yyyy-MM-dd') : String(r[0] || ''),
+      ref: String(r[1] || '').trim(), supplier: String(r[2] || ''), amount: num_(r[3]), status: String(r[4] || 'OK'),
+      file: String(r[5] || ''), notes: String(r[7] || ''), by: String(r[8] || ''),
+    });
+  }
+  return out;
+}
+
+function materialsInfo_() {
+  return { items: readMaterials_(), sheetUrl: SpreadsheetApp.openById(prop_('MAT_SHEET_ID')).getUrl(), folderUrl: invoiceFolder_().getUrl() };
+}
+
+/** Reads text from a PDF or photo by letting Drive OCR it into a temporary Google Doc. Needs the Drive advanced service. */
+function ocrText_(file) {
+  try {
+    const tmp = Drive.Files.copy({ name: 'hq-ocr-tmp', mimeType: 'application/vnd.google-apps.document' }, file.getId(), { ocrLanguage: 'en' });
+    const text = DocumentApp.openById(tmp.id).getBody().getText();
+    DriveApp.getFileById(tmp.id).setTrashed(true);
+    return text;
+  } catch (e) { return ''; }
+}
+
+function parseInvoice_(text, name) {
+  const t = String(text || ''), all = t + ' ' + name;
+  const ref = (all.match(/\b(VP\d{5}|VENT\d{3}|VP[0-9]{2}[0-9]{3})\b/i) || [])[1] || '';
+  const money = s => num_(String(s).replace(/,/g, ''));
+  let ex = 0;
+  const lines = t.split(/\n/);
+  const findAfter = re => { for (const l of lines) { if (re.test(l)) { const m = l.match(/\$?\s*([0-9][0-9,]*\.\d{2})/g); if (m) return money(m[m.length - 1]); } } return 0; };
+  ex = findAfter(/sub\s*-?total|total\s*(ex|excl|excluding)/i);
+  if (!ex) { const inc = findAfter(/total\s*(inc|incl|including)?|amount\s*due|balance\s*due/i); if (inc) ex = Math.round(inc / 1.1 * 100) / 100; }
+  if (!ex) { const m = t.match(/\$\s*([0-9][0-9,]*\.\d{2})/g); if (m) ex = Math.round(Math.max.apply(null, m.map(money)) / 1.1 * 100) / 100; }
+  const d = t.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})\b/);
+  let date = '';
+  if (d) { const y = d[3].length === 2 ? 2000 + Number(d[3]) : Number(d[3]); date = y + '-' + String(d[2]).padStart(2, '0') + '-' + String(d[1]).padStart(2, '0'); }
+  const firstLine = (lines.find(l => l.trim().length > 2) || '').trim();
+  const supplier = (firstLine && !/tax invoice|invoice/i.test(firstLine) ? firstLine : name.replace(/\.[a-z0-9]+$/i, '')).slice(0, 60);
+  return { ref: ref.toUpperCase(), amount: ex, date: date, supplier: supplier };
+}
+
+/** Looks for new files in the Supplier invoices folder and adds them to the sheet as "Check". */
+function scanInvoices(limit) {
+  const sh = matSheet_();
+  const known = {};
+  sh.getDataRange().getValues().slice(1).forEach(r => { if (r[6]) known[String(r[6])] = 1; });
+  const it = invoiceFolder_().getFiles();
+  let n = 0;
+  while (it.hasNext() && n < (limit || 15)) {
+    const f = it.next();
+    if (known[f.getId()]) continue;
+    const mt = f.getMimeType();
+    if (!/pdf|image\//.test(mt)) continue;
+    const p = parseInvoice_(ocrText_(f), f.getName());
+    sh.appendRow([p.date ? new Date(p.date) : f.getDateCreated(), p.ref, p.supplier, p.amount || '', 'Check', f.getUrl(), f.getId(), 'Read from the invoice. Check the job and amount.', 'Folder', new Date()]);
+    n++;
+  }
+  if (n) CacheService.getScriptCache().remove('HQ_DATA');
+  return n;
+}
+
+/** "Add material" from the dashboard: optional receipt photo or PDF, one or more job lines. */
+function addMaterial(m) {
+  const who = allowed_();
+  if (!who) throw new Error('Not available');
+  const lines = ((m && m.lines) || []).filter(l => num_(l.amount) > 0);
+  if (!lines.length) throw new Error('Enter an amount');
+  const sh = matSheet_();
+  let url = '', id = '';
+  if (m.file && m.file.data) {
+    const bytes = Utilities.base64Decode(String(m.file.data).split(',').pop());
+    const blob = Utilities.newBlob(bytes, m.file.type || 'image/jpeg', (m.supplier || 'receipt') + ' ' + (m.date || '') + (/pdf/.test(m.file.type) ? '.pdf' : '.jpg'));
+    const f = invoiceFolder_().createFile(blob);
+    url = f.getUrl(); id = f.getId();
+  }
+  lines.forEach((l, i) => sh.appendRow([m.date ? new Date(m.date) : new Date(), String(l.ref || '').toUpperCase(), String(m.supplier || ''), num_(l.amount), 'OK', url, i === 0 ? id : '', String(m.notes || ''), who, new Date()]));
+  CacheService.getScriptCache().remove('HQ_DATA');
+  return materialsInfo_();
+}
+
+/** Confirm, fix or ignore a row from the dashboard. */
+function updateMaterial(u) {
+  if (!allowed_()) throw new Error('Not available');
+  const sh = matSheet_();
+  const row = Number(u && u.row);
+  if (!row || row < 2 || row > sh.getLastRow()) throw new Error('Row not found');
+  if (u.ref !== undefined) sh.getRange(row, 2).setValue(String(u.ref).toUpperCase());
+  if (u.supplier !== undefined) sh.getRange(row, 3).setValue(String(u.supplier));
+  if (u.amount !== undefined) sh.getRange(row, 4).setValue(num_(u.amount));
+  if (u.status) sh.getRange(row, 5).setValue(u.status === 'Ignore' ? 'Ignore' : 'OK');
+  CacheService.getScriptCache().remove('HQ_DATA');
+  return materialsInfo_();
+}
+
+function ensureTrigger_() {
+  if (!ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'hourlyScan')) {
+    ScriptApp.newTrigger('hourlyScan').timeBased().everyHours(1).create();
+  }
+}
+function hourlyScan() { scanInvoices(15); }
+
 /** Run once from the editor to approve access (Sheets, fetching the page). */
 function authorise() {
+  matSheet_(); invoiceFolder_(); ensureTrigger_();
   getData(true);
   fetchPage_();
 }
