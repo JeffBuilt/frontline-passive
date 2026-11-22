@@ -202,8 +202,8 @@ function readFrontline_() {
 /* ---------------- profit rules (editable from the dashboard) ---------------- */
 
 const DEFAULT_RULES = {
-  oh: 10,                          // % of the gross invoice transferred to overheads
-  pb: 10,                          // Ventia PB deduction % when the payment batch isn't known yet
+  oh: 0,                           // not used: project management (PB) is the only deduction
+  pb: 10,                          // project management % (Ventia PB) when the payment batch isn't known yet
   flat: { 'IoT sensors': 6000 },   // recurring contract: flat amount left to split per month
   mat: {                           // estimated materials as % of the job, used until real supplier costs are entered
     'Passive fire': 15, 'Air filters': 25, 'Water filters': 25, 'SIT': 30,

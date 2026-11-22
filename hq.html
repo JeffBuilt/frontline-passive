@@ -375,7 +375,7 @@ function renderHero(list) {
     <div class="hero-grid">
       <div><div class="hero-big" data-count="${total}">${k$(total)}</div><p>expected income, ex GST</p></div>
       <div class="hero-s"><strong data-count="${earned}">${k$(earned)}</strong><p>invoiced or paid (${Math.round(pct(earned))}%)</p></div>
-      <div class="hero-s"><strong data-count="${cashIn}">${k$(cashIn)}</strong><p>cash received after PB</p></div>
+      <div class="hero-s"><strong data-count="${cashIn}">${k$(cashIn)}</strong><p>cash received after project management</p></div>
     </div>
     <div class="progress"><div class="pbar">${STAGES.map(st => `<span class="s-${st.k === 'invoiced' ? 'inv' : st.k === 'approved' ? 'appr' : st.k}" style="width:${pct(s[st.k] || 0)}%"></span>`).join('')}</div>
       <div class="pkey">${STAGES.map(st => `<span><i class="s-${st.k === 'invoiced' ? 'inv' : st.k === 'approved' ? 'appr' : st.k}" style="background:${st.k === 'paid' ? '#fff' : st.k === 'invoiced' ? '#a9bdd1' : st.k === 'done' ? '#6f8aa7' : st.k === 'approved' ? '#4c6584' : ''}${st.k === 'pipe' ? ';background:repeating-linear-gradient(135deg,#6f8aa7 0 3px,#33496a 3px 6px)' : ''}"></i>${esc(st.short || st.name)} <b>${k$(s[st.k] || 0)}</b></span>`).join('')}</div></div>
@@ -491,23 +491,24 @@ function renderCash(list) {
   return `<section class="panel"><div class="p-head"><div><h3>Cash flow</h3><p>When the money lands: end of the invoice month + ${D.payDays} days. Not invoiced yet is forecast from the end of its work month.</p></div>
     <p><b>${k$(next3)}</b> confirmed to land in the next 3 months</p></div>
     ${barChart('cash', months, cols, { label: 'Cash expected by month' })}
-    <div class="key"><span><i style="background:#21334a"></i>Received (after PB)</span><span><i style="background:#c62828"></i>Overdue</span><span><i style="background:#4b6a8c"></i>Invoiced, due</span><span><i style="background:#8fa6bf"></i>Done or approved, forecast</span><span><i class="hatch"></i>Pipeline, forecast</span></div></section>`;
+    <div class="key"><span><i style="background:#21334a"></i>Received (after project management)</span><span><i style="background:#c62828"></i>Overdue</span><span><i style="background:#4b6a8c"></i>Invoiced, due</span><span><i style="background:#8fa6bf"></i>Done or approved, forecast</span><span><i class="hatch"></i>Pipeline, forecast</span></div></section>`;
 }
 
 /* ---------- what's left for Jeff and Dan ---------- */
 function rulesOf() {
   const R = D.rules || {};
-  return { oh: R.oh != null ? R.oh : 10, pb: R.pb != null ? R.pb : 10, flat: R.flat || { 'IoT sensors': 6000 }, mat: R.mat || {}, notes: R.notes || {}, split: R.split || [{ name: 'Jeff', pct: 50 }, { name: 'Dan', pct: 50 }] };
+  const MAT = { 'Passive fire': 15, 'Air filters': 25, 'Water filters': 25, 'SIT': 30, 'Fire repairs': 15, 'Mechanical repairs': 15, 'Inspections and reports': 5, 'Kitchen': 15, 'Projects': 15 };
+  return { oh: 0, pb: R.pb != null ? R.pb : 10, flat: R.flat || { 'IoT sensors': 6000 }, mat: Object.assign({}, MAT, R.mat || {}), notes: R.notes || {}, split: R.split || [{ name: 'Jeff', pct: 50 }, { name: 'Dan', pct: 50 }] };
 }
 const CONFIRMED = j => stageOf(j) !== 'pipe';
 function matItems() { return ((D.materials && D.materials.items) || []).filter(m => m.status !== 'Ignore'); }
 function matByRef() { const o = {}; matItems().forEach(m => { if (m.ref) o[m.ref] = (o[m.ref] || 0) + m.amount; }); return o; }
-// one job, before splitting: gross, PB, overhead, materials (real or estimated), what's left
+// one job, before splitting: gross, project management (10%, or the actual PB), materials (real or estimated), what's left
 function jobMoney(j, mref) {
   const R = rulesOf(), g = j.price;
   const pbActual = pbByRef[j.ref];
-  const pb = pbActual ? pbActual.deduction : g * R.pb / 100;
-  const oh = g * R.oh / 100;
+  const pb = pbActual ? pbActual.deduction : g * R.pb / 100; // project management (PB)
+  const oh = 0;
   const real = mref[j.ref];
   const mat = real != null ? real : g * (R.mat[j.category] != null ? R.mat[j.category] : 15) / 100;
   return { g, pb, oh, mat, est: real == null, left: g - pb - oh - mat };
@@ -547,12 +548,11 @@ function renderProfit(list) {
   const cols = rows.map(r => ({ m: r.m, total: Math.max(0, r.left), parts: BIZ_NAMES.map(b => [{ v: Math.max(0, r.biz[b].firm), color: BIZ[b].color, label: b + ', confirmed' }, { v: Math.max(0, r.biz[b].pipe), color: BIZ[b].color, hatch: { Veridian: 'hatchV', Frontline: 'hatchF', Pulse: 'hatchP' }[b], tipColor: BIZ[b].color, label: b + ', pipeline' }]).flat() }));
   const cats = [...new Set(D.jobs.map(j => j.category))].sort();
   return `<section class="panel" id="profit"><div class="p-head"><div><h3>Left for ${sp.map(p => esc(p.name)).join(' and ')}</h3>
-      <p>Income minus PB, ${R.oh}% overhead and materials, then split ${sp.map(p => `${p.pct}%`).join(' / ')}. Sensors are a flat ${money(R.flat['IoT sensors'] || 0)} a month.</p></div>
+      <p>Income minus ${R.pb}% project management and materials, then split ${sp.map(p => `${p.pct}%`).join(' / ')}. Sensors are a flat ${money(R.flat['IoT sensors'] || 0)} a month.</p></div>
       <div class="p-tools"><div class="seg">${[['work', 'By work month'], ['cash', 'When cash lands']].map(([k, l]) => `<button class="${(F.leftBy || 'work') === k ? 'on' : ''}" data-leftby="${k}">${l}</button>`).join('')}</div><button class="morebtn" id="rulesBtn">Rules</button></div></div>
     <div class="rules ${F.rules ? 'on' : ''}">
       <h4>Taken off every job (not sensors)</h4><div class="rules-grid">
-        <div class="rule"><label>Overhead<small>% of the gross invoice</small></label><div class="inp"><input inputmode="decimal" id="r_oh" value="${R.oh}">%</div></div>
-        <div class="rule"><label>Ventia PB<small>used until the payment batch is known</small></label><div class="inp"><input inputmode="decimal" id="r_pb" value="${R.pb}">%</div></div></div>
+        <div class="rule"><label>Project management<small>% of the invoice; the payment batch figure is used once known</small></label><div class="inp"><input inputmode="decimal" id="r_pb" value="${R.pb}">%</div></div></div>
       <h4>Materials estimate, until real supplier costs are entered</h4><div class="rules-grid">${cats.filter(c => R.flat[c] == null).map(c => `<div class="rule"><label>${esc(c)}${R.notes[c] ? `<small>${esc(R.notes[c])}</small>` : ''}</label><div class="inp"><input inputmode="decimal" data-rmat="${esc(c)}" value="${R.mat[c] != null ? R.mat[c] : 15}">%</div></div>`).join('')}</div>
       <h4>Flat per month (recurring contracts)</h4><div class="rules-grid">${Object.keys(R.flat).map(c => `<div class="rule"><label>${esc(c)}<small>${esc(R.notes[c] || 'left to split each month')}</small></label><div class="inp">$<input inputmode="decimal" data-rflat="${esc(c)}" value="${R.flat[c]}"></div></div>`).join('')}</div>
       <h4>Split</h4><div class="rules-grid">${sp.map((p, i) => `<div class="rule"><label>${esc(p.name)}</label><div class="inp"><input inputmode="decimal" data-rsplit="${i}" value="${p.pct}">%</div></div>`).join('')}</div>
@@ -564,9 +564,9 @@ function renderProfit(list) {
     </div>
     ${barChart('prof', months, cols, { label: 'Left to split by month' })}
     <div class="key">${BIZ_NAMES.map(b => `<span><i style="background:${BIZ[b].color}"></i>${b}</span>`).join('')}<span><i class="hatch"></i>Striped is pipeline</span>${T.est ? `<span><b class="estdot">est</b>${money(T.est)} of materials is still an estimate</span>` : ''}</div>
-    <div class="tablewrap"><table class="pt"><thead><tr><th>Month</th><th class="hide-s">Income</th><th class="hide-s">PB</th><th class="hide-s">Overhead</th><th class="hide-s">Materials</th><th>Left</th>${sp.map(p => `<th>${esc(p.name)}</th>`).join('')}</tr></thead><tbody>
-      ${rows.map(r => `<tr class="${r.m < NOW() ? 'past' : r.m === NOW() ? 'now' : ''}"><td>${mLong(r.m)}</td><td class="hide-s">${money(r.g)}</td><td class="hide-s">−${money(r.pb)}</td><td class="hide-s">−${money(r.oh)}</td><td class="hide-s">−${money(r.mat)}${r.est > 0.5 ? ' <b class="estdot" title="Includes estimated materials">est</b>' : ''}</td><td class="p">${money(r.left)}</td>${sp.map(p => `<td>${money(share(r.left, p))}</td>`).join('')}</tr>`).join('')}
-    </tbody><tfoot><tr><td>Total</td><td class="hide-s">${money(T.g)}</td><td class="hide-s">−${money(T.pb)}</td><td class="hide-s">−${money(T.oh)}</td><td class="hide-s">−${money(T.mat)}</td><td>${money(T.left)}</td>${sp.map(p => `<td>${money(share(T.left, p))}</td>`).join('')}</tr></tfoot></table></div>
+    <div class="tablewrap"><table class="pt"><thead><tr><th>Month</th><th class="hide-s">Income</th><th class="hide-s">Project mgmt</th><th class="hide-s">Materials</th><th>Left</th>${sp.map(p => `<th>${esc(p.name)}</th>`).join('')}</tr></thead><tbody>
+      ${rows.map(r => `<tr class="${r.m < NOW() ? 'past' : r.m === NOW() ? 'now' : ''}"><td>${mLong(r.m)}</td><td class="hide-s">${money(r.g)}</td><td class="hide-s">−${money(r.pb)}</td><td class="hide-s">−${money(r.mat)}${r.est > 0.5 ? ' <b class="estdot" title="Includes estimated materials">est</b>' : ''}</td><td class="p">${money(r.left)}</td>${sp.map(p => `<td>${money(share(r.left, p))}</td>`).join('')}</tr>`).join('')}
+    </tbody><tfoot><tr><td>Total</td><td class="hide-s">${money(T.g)}</td><td class="hide-s">−${money(T.pb)}</td><td class="hide-s">−${money(T.mat)}</td><td>${money(T.left)}</td>${sp.map(p => `<td>${money(share(T.left, p))}</td>`).join('')}</tr></tfoot></table></div>
   </section>`;
 }
 function bindProfit() {
@@ -575,7 +575,7 @@ function bindProfit() {
   const s = $('#rulesSave'); if (!s) return;
   s.onclick = () => {
     const R = JSON.parse(JSON.stringify(rulesOf()));
-    R.oh = Number($('#r_oh').value) || 0; R.pb = Number($('#r_pb').value) || 0;
+    R.oh = 0; R.pb = Number($('#r_pb').value) || 0;
     $$('[data-rmat]').forEach(i => R.mat[i.dataset.rmat] = Number(i.value) || 0);
     $$('[data-rflat]').forEach(i => R.flat[i.dataset.rflat] = Number(i.value) || 0);
     $$('[data-rsplit]').forEach(i => R.split[Number(i.dataset.rsplit)].pct = Number(i.value) || 0);
@@ -605,7 +605,8 @@ function jobOptions(sel) {
   return `<option value="">Pick the job…</option>` + js.filter(j => !seen.has(j.ref) && seen.add(j.ref)).map(j => `<option value="${esc(j.ref)}" ${j.ref === sel ? 'selected' : ''}>${esc(j.ref)} · ${esc((j.loc || j.job).slice(0, 34))} · ${mShort(j.month)}</option>`).join('') + `<option value="" ${sel === '__none' ? 'selected' : ''}>General (no job)</option>`;
 }
 function renderMaterials() {
-  const M = D.materials || { items: [] };
+  if (!D.materials) return '';
+  const M = D.materials;
   const check = M.items.filter(m => m.status === 'Check');
   const recent = M.items.filter(m => m.status === 'OK').slice(-8).reverse();
   const f = F.matForm;
