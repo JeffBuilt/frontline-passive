@@ -1,7 +1,7 @@
 /* Frontline Compliance and Fire - passive fire app (offline-first PWA) */
 'use strict';
 
-const APP_VERSION = '2.1.0';
+const APP_VERSION = '2.1.1';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const LS = { setup: 'pf_setup', config: 'pf_config', loc: 'pf_loc', draft: 'pf_draft', localLocs: 'pf_local_locs', area: 'pf_area', rdraft: 'pf_rdraft' };
 const FACES = ['Wall', 'Floor', 'Ceiling / slab'];
@@ -226,6 +226,32 @@ $('#camera').addEventListener('change', async e => {
     state.draft[t === 'beforePhoto' ? 'beforePhoto' : 'photo'] = data;
     saveDraft(); render();
   } catch (err) { toast(err.message); }
+});
+
+// Pick many before photos at once (camera roll or PC files); each photo is queued on its own so it survives going offline
+$('#gallery').addEventListener('change', async e => {
+  const files = Array.from(e.target.files || []);
+  e.target.value = '';
+  const code = state.bulkBefore; state.bulkBefore = null;
+  const job = records().find(j => j.code === code);
+  if (!files.length || !job) return;
+  let n = 0;
+  for (const file of files) {
+    toast(`Adding before photo ${n + 1} of ${files.length}…`, 60000);
+    try {
+      const data = await compressImage(file);
+      const recordKey = uid();
+      await db.put({ recordKey, action: 'update', createdAt: Date.now(), price: 0, label: `Before photo · ${job.vp || job.code}`,
+        record: { recordKey, code: job.code, fields: {}, photos: [data], afterPhotos: [] } });
+      n++;
+    } catch (err) { toast(err.message); }
+  }
+  job.beforeCount = (job.beforeCount || 0) + n;
+  store.set(LS.config, state.config);
+  state.queue = await db.all();
+  toast(`${n} before photo${n === 1 ? '' : 's'} added to ${job.vp || job.code}` + (navigator.onLine ? ' · uploading' : ' · will upload when online'), 3500);
+  render();
+  if (navigator.onLine) sync();
 });
 
 /* ---------------- server ---------------- */
@@ -754,13 +780,18 @@ function renderJobs() {
     return `<div class="card"><div class="group">${esc(g)}</div><p class="muted">${esc(list[0].month)} · ${list.length} penetration${list.length === 1 ? "" : "s"} · ${money(list.reduce((s, j) => s + j.price, 0))}</p>
       ${list.map(j => `<div class="item"><div class="grow"><div class="title"><span class="tag">${esc(j.code)}</span> ${esc(j.type)}</div>
         <div class="muted">${esc(j.face)} · ${esc(j.size)} · ${esc(j.product)} × ${j.qty}${j.notes ? ' · ' + esc(j.notes) : ''}</div>
-        ${j.before ? `<a class="muted" href="${esc(j.before)}" target="_blank" rel="noopener">Before photo</a>` : ''}</div>
+        <div class="row">${j.before ? `<a class="muted" href="${esc(j.before)}" target="_blank" rel="noopener">Before photos (${j.beforeCount || 1})</a>` : `<span class="muted">${j.beforeCount ? `Before photos (${j.beforeCount}) · uploading` : 'No before photos'}</span>`}
+        <button class="ghost" data-before="${esc(j.code)}">+ Before photos</button></div></div>
         <button class="ghost" data-done="${esc(j.code)}">Done</button></div>`).join('')}</div>`;
   }).join('') + `<button class="ghost" id="refresh">Refresh</button>`;
 }
 
 function bindJobs() {
   const r = $('#refresh'); if (r) r.onclick = () => refreshConfig();
+  $$('[data-before]').forEach(b => b.onclick = () => {
+    state.bulkBefore = b.dataset.before;
+    const g = $('#gallery'); g.value = ''; g.click();
+  });
   $$('[data-done]').forEach(b => b.onclick = () => {
     state.doneJob = { job: records().find(j => j.code === b.dataset.done), photo: '', notes: '' };
     renderDone();
