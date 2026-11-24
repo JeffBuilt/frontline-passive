@@ -1,7 +1,7 @@
 /* Frontline app v3.0 - stripped back: month > jobs > before/after photos > docs > report. Offline-first. */
 'use strict';
 
-const APP_VERSION = '3.0.1';
+const APP_VERSION = '3.0.2';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const MAX_PX = 1600, JPEG_Q = 0.78;
 const TYPES = [['passive', 'Passive fire'], ['filters', 'Filters'], ['water', 'Water filters'], ['sit', 'SIT'], ['repairs', 'Fire repairs'], ['other', 'Other']];
@@ -358,27 +358,38 @@ function jobCard(j) {
     '<span class="pill ' + (c.after ? 'ok' : 'no') + '">After ' + c.after + '</span></div></button>';
 }
 
+const ICON = {
+  cam: '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>',
+  img: '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/></svg>',
+  doc: '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
+  check: '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
+  warn: '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>',
+  chev: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+};
+
 function jobView() {
   const { job } = findJob(S.view.ref, S.view.wo);
   const c = counts(job), st = state(job);
   const units = unitsOf(job);
-  const stTxt = st === 'green' ? '✓ Photos done' : st === 'amber' ? (c.before ? '⚠ Needs AFTER photos' : '⚠ Needs BEFORE photos') : '✗ No photos yet';
+  const stTxt = st === 'green' ? 'Photos done' : st === 'amber' ? (c.before ? 'Needs after photos' : 'Needs before photos') : 'No photos yet';
   const sect = (kind, label) => {
     const n = c[kind];
-    return '<div class="sect"><h2>' + label + '<span class="count' + (n ? ' ok' : '') + '">' + n + '</span></h2>' +
-      '<div class="thumbs" id="th-' + kind + '"></div>' +
-      '<div class="big2"><button class="btn cam" data-act="cam" data-k="' + kind + '"><span class="ic">📷</span>Take photo</button>' +
-      '<button class="btn" data-act="lib" data-k="' + kind + '"><span class="ic">🖼</span>From phone</button></div></div>';
+    return '<div class="sect"><div class="sh"><span class="st">' + label + '</span>' +
+      '<span class="cnt ' + (n ? 'ok' : 'no') + '">' + (n ? ICON.check.replace(/26/g, '18') : '') + n + ' photo' + (n === 1 ? '' : 's') + '</span></div>' +
+      '<div class="thumbs" id="th-' + kind + '">' + (n ? '' : '<div class="none">No ' + label.toLowerCase() + ' photos yet</div>') + '</div>' +
+      '<div class="acts"><button class="pbtn" data-act="cam" data-k="' + kind + '">' + ICON.cam + '<span>Take photo</span></button>' +
+      '<button class="sbtn" data-act="lib" data-k="' + kind + '">' + ICON.img + '<span>Upload</span></button></div></div>';
   };
   return '<div class="top"><button class="back" data-act="back">‹</button><h1>' + esc(job.ref) + '</h1>' + syncChip() + '</div>' +
-    '<div class="head ' + st + '"><div class="loc" style="margin:0">' + esc(shortLoc(job.loc) || job.job) + '</div>' +
-    '<div class="desc">' + esc(job.job) + (job.wo ? ' · WO ' + esc(job.wo) : '') + '</div>' +
-    '<div class="status" style="color:var(--' + (st === 'green' ? 'green' : st === 'amber' ? 'amber' : 'red') + ')">' + stTxt + '</div>' +
-    (units.length ? '<div class="units">' + units.map(u => '<button class="unit' + (S.unit === u ? ' on' : '') + '" data-act="unit" data-u="' + esc(u) + '">' + esc(u) + '</button>').join('') + '</div>' +
-      '<div class="desc" style="margin-top:6px">' + (S.unit ? 'Photos are named for ' + esc(S.unit) : 'Tap the unit you are on (optional)') + '</div>' : '') +
-    '</div>' + sect('before', 'BEFORE') + sect('after', 'AFTER') +
-    '<button class="btn wide" data-act="docs"><span class="ic">📄</span>Docs · SWMS · ATW</button>' +
-    '<button class="btn wide green" data-act="finish"' + (c.after ? '' : ' disabled') + '><span class="ic">✅</span>' + (job.sr ? 'Remake service report' : 'Finish · make service report') + '</button>';
+    '<div class="jh"><div class="badge ' + st + '">' + (st === 'green' ? ICON.check.replace(/26/g, '18') : ICON.warn) + '<span>' + stTxt + '</span></div>' +
+    '<div class="jl">' + esc(shortLoc(job.loc) || job.job) + '</div>' +
+    '<div class="meta"><span class="tag">' + esc(TYPE_NAME[job.type] || job.job) + '</span>' + (job.wo ? '<span>WO ' + esc(job.wo) + '</span>' : '') + '</div>' +
+    (units.length ? '<div class="ul">Unit you are on <span>(optional, names the photos)</span></div><div class="units">' +
+      units.map(u => '<button class="unit' + (S.unit === u ? ' on' : '') + '" data-act="unit" data-u="' + esc(u) + '">' + esc(u) + '</button>').join('') + '</div>' : '') +
+    '</div>' + sect('before', 'Before') + sect('after', 'After') +
+    '<button class="rowbtn" data-act="docs"><span class="ri">' + ICON.doc + '</span><span class="rt">Documents<small>SWMS, ATW, report</small></span>' + ICON.chev + '</button>' +
+    '<button class="fin" data-act="finish"' + (c.after ? '' : ' disabled') + '>' + ICON.check + '<span>' + (job.sr ? 'Remake service report' : 'Finish job') + '</span></button>' +
+    (c.after ? '' : '<div class="hint">Finish unlocks once there is at least one after photo</div>');
 }
 
 async function fillThumbs() {
@@ -386,11 +397,12 @@ async function fillThumbs() {
   const job = f.job;
   for (const kind of ['before', 'after']) {
     const box = $('#th-' + kind); if (!box) continue;
-    const local = pending(job, kind).map(q => '<button data-act="viewq" data-k="' + kind + '" data-id="' + q.k + '"><img src="' + q.data + '"><span class="q">⬆</span></button>').join('');
-    box.innerHTML = local;
+    const local = pending(job, kind).map(q => '<button data-act="viewq" data-k="' + kind + '" data-id="' + q.k + '"><img src="' + q.data + '"><span class="q">Uploading</span></button>').join('');
+    if (local) box.innerHTML = local;
     const list = await photoList(job, kind);
     if (S.view.screen !== 'job' || S.view.ref !== job.ref) return;
     const el = $('#th-' + kind); if (!el) return;
+    if (!list.length && !local) continue;
     el.innerHTML = list.map((p, i) => '<button data-act="view" data-k="' + kind + '" data-i="' + i + '"><img data-id="' + p.id + '" alt=""></button>').join('') + local;
     for (const img of el.querySelectorAll('img[data-id]')) {
       image(img.dataset.id).then(src => { if (src) img.src = src; }).catch(() => {});
