@@ -143,7 +143,7 @@ function type_(job, ref) {
 
 function months_() {
   const now = new Date();
-  const want = [0, 1, 2].map(k => {
+  const want = [0, 1, 2, 3, 4, 5, 6].map(k => {   // this month + the next 6
     const d = new Date(now.getFullYear(), now.getMonth() + k, 1);
     return Utilities.formatDate(d, TZ, 'yyyy-MM');
   });

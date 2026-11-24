@@ -1,7 +1,7 @@
 /* Frontline app v3.0 - stripped back: month > jobs > before/after photos > docs > report. Offline-first. */
 'use strict';
 
-const APP_VERSION = '3.0.0';
+const APP_VERSION = '3.0.1';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const MAX_PX = 1600, JPEG_Q = 0.78;
 const TYPES = [['passive', 'Passive fire'], ['filters', 'Filters'], ['water', 'Water filters'], ['sit', 'SIT'], ['repairs', 'Fire repairs'], ['other', 'Other']];
@@ -303,14 +303,24 @@ function monthsView() {
     return '<div class="top"><h1>Frontline</h1>' + syncChip() + '</div>' +
       (S.error ? '<div class="err">' + esc(S.error) + '</div>' : '<div class="empty">Loading jobs…</div>');
   }
-  const tiles = S.months.map(m => {
-    const p = progress(m.jobs);
-    return '<button class="month" data-act="month" data-ym="' + m.ym + '">' +
-      '<div><span class="mn">' + esc(m.label) + '</span><span class="yr">' + m.year + '</span></div>' +
-      '<div class="money"><b>' + money(p.done) + '</b> of ' + money(p.tot) + ' done</div>' + bar(p) +
-      '<div class="legend"><span><span class="dot" style="background:var(--green)"></span>' + p.nDone + ' of ' + p.n + ' jobs</span>' +
-      (p.n - p.nDone ? '<span><span class="dot" style="background:var(--red)"></span>' + (p.n - p.nDone) + ' to finish</span>' : '') + '</div></button>';
+  const cur = S.months[0], p0 = progress(cur.jobs);
+  const tile = '<button class="month" data-act="month" data-ym="' + cur.ym + '">' +
+    '<div><span class="mn">' + esc(cur.label) + '</span><span class="yr">' + cur.year + '</span></div>' +
+    '<div class="money"><b>' + money(p0.done) + '</b> of ' + money(p0.tot) + ' done</div>' + bar(p0) +
+    '<div class="legend"><span><span class="dot" style="background:var(--green)"></span>' + p0.nDone + ' of ' + p0.n + ' jobs</span>' +
+    (p0.n - p0.nDone ? '<span><span class="dot" style="background:var(--red)"></span>' + (p0.n - p0.nDone) + ' to finish</span>' : '') + '</div></button>';
+  const ahead = S.months.slice(1, 7);
+  const tots = ahead.map(m => m.jobs.reduce((a, j) => a + (j.price || 0), 0));
+  const top = Math.max(1, p0.tot, ...tots);
+  const avg = tots.reduce((a, b) => a + b, 0) / (tots.length || 1);
+  const minis = ahead.map((m, i) => {
+    const t = tots[i], low = t < avg * 0.6;
+    return '<button class="mini' + (low ? ' low' : '') + '" data-act="month" data-ym="' + m.ym + '">' +
+      '<span class="mm">' + esc(m.label.slice(0, 3)) + (m.ym.slice(5) === '01' ? ' ' + m.year.slice(2) : '') + '</span>' +
+      '<span class="mbar"><i style="width:' + (t / top * 100) + '%"></i></span>' +
+      '<span class="mv">' + money(t) + '</span><span class="lt">' + (low ? '<span class="lowtag">Low</span>' : '') + '</span></button>';
   }).join('');
+  const tiles = tile + (ahead.length ? '<div class="ahead"><div class="ah">Coming up · work booked</div>' + minis + '</div>' : '');
   const when = S.loadedAt ? new Date(S.loadedAt).toLocaleString('en-AU', { weekday: 'short', hour: 'numeric', minute: '2-digit' }) : '';
   return '<div class="top"><h1>Frontline</h1>' + syncChip() + '</div>' + tiles +
     (S.error ? '<div class="err">' + esc(S.error) + '</div>' : '') +
