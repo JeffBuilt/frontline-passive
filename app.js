@@ -1,7 +1,7 @@
 /* Frontline app v3.0 - stripped back: month > jobs > before/after photos > docs > report. Offline-first. */
 'use strict';
 
-const APP_VERSION = '3.1.0';
+const APP_VERSION = '3.2.0';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const MAX_PX = 1600, JPEG_Q = 0.78;
 const TYPES = [['passive', 'Passive fire'], ['filters', 'Filters'], ['water', 'Water filters'], ['sit', 'SIT'], ['repairs', 'Fire repairs'], ['other', 'Other']];
@@ -111,7 +111,13 @@ function pending(job, kind) { return S.queue.filter(q => q.ref === job.ref && q.
 function counts(job) {
   return { before: (job.before || 0) + pending(job, 'before').length, after: (job.after || 0) + pending(job, 'after').length };
 }
-function state(job) { const c = counts(job); return c.before && c.after ? 'green' : (c.before || c.after) ? 'amber' : 'red'; }
+/** Green only when after photos have caught up with before photos (or someone marked it complete). */
+function state(job) {
+  const c = counts(job);
+  if (job.done) return 'green';
+  if (c.before && c.after >= c.before) return 'green';
+  return (c.before || c.after) ? 'amber' : 'red';
+}
 function month(ym) { return (S.months || []).find(m => m.ym === ym); }
 function findJob(ref, wo) {
   for (const m of S.months || []) { const j = m.jobs.find(x => x.ref === ref && x.wo === wo); if (j) return { job: j, month: m }; }
@@ -355,7 +361,8 @@ function jobCard(j) {
     '<div class="vp">' + esc(j.ref || '—') + '<small>' + esc(TYPE_NAME[j.type] || j.job) + '</small></div>' +
     '<div class="loc">' + esc(shortLoc(j.loc) || j.job) + '</div>' +
     '<div class="pills"><span class="pill ' + (c.before ? 'ok' : 'no') + '">Before ' + c.before + '</span>' +
-    '<span class="pill ' + (c.after ? 'ok' : 'no') + '">After ' + c.after + '</span></div></button>';
+    '<span class="pill ' + (c.after && c.after >= c.before ? 'ok' : c.after ? 'part' : 'no') + '">After ' + c.after + (c.before ? '/' + c.before : '') + '</span></div>' +
+    (j.done && !(c.before && c.after >= c.before) ? '<div class="ovr">Marked complete</div>' : '') + '</button>';
 }
 
 const ICON = {
@@ -371,11 +378,15 @@ function jobView() {
   const { job } = findJob(S.view.ref, S.view.wo);
   const c = counts(job), st = state(job);
   const units = unitsOf(job);
-  const stTxt = st === 'green' ? 'Photos done' : st === 'amber' ? (c.before ? 'Needs after photos' : 'Needs before photos') : 'No photos yet';
+  const matched = c.before && c.after >= c.before;
+  const stTxt = st === 'green' ? (matched ? 'Photos done' : 'Marked complete') :
+    st === 'amber' ? (c.before ? 'After photos ' + c.after + ' of ' + c.before : 'Needs before photos') : 'No photos yet';
   const sect = (kind, label) => {
     const n = c[kind];
     return '<div class="sect"><div class="sh"><span class="st">' + label + '</span>' +
-      '<span class="cnt ' + (n ? 'ok' : 'no') + '">' + (n ? ICON.check.replace(/26/g, '18') : '') + n + ' photo' + (n === 1 ? '' : 's') + '</span></div>' +
+      (kind === 'after' && c.before && n < c.before
+        ? '<span class="cnt ' + (n ? 'part' : 'no') + '">' + n + ' of ' + c.before + '</span></div>'
+        : '<span class="cnt ' + (n ? 'ok' : 'no') + '">' + (n ? ICON.check.replace(/26/g, '18') : '') + n + ' photo' + (n === 1 ? '' : 's') + '</span></div>') +
       '<div class="thumbs" id="th-' + kind + '">' + (n ? '' : '<div class="none">No ' + label.toLowerCase() + ' photos yet</div>') + '</div>' +
       '<div class="acts"><button class="pbtn" data-act="cam" data-k="' + kind + '">' + ICON.cam + '<span>Take photo</span></button>' +
       '<button class="sbtn" data-act="lib" data-k="' + kind + '">' + ICON.img + '<span>Upload</span></button></div></div>';
@@ -388,6 +399,8 @@ function jobView() {
       units.map(u => '<button class="unit' + (S.unit === u ? ' on' : '') + '" data-act="unit" data-u="' + esc(u) + '">' + esc(u) + '</button>').join('') + '</div>' : '') +
     '</div>' + sect('before', 'Before') + sect('after', 'After') +
     '<button class="rowbtn" data-act="docs"><span class="ri">' + ICON.doc + '</span><span class="rt">Documents<small>SWMS, ATW, report</small></span>' + ICON.chev + '</button>' +
+    (st === 'amber' ? '<button class="ovbtn" data-act="markdone">Mark complete anyway</button>' : '') +
+    (job.done && !matched ? '<button class="ovbtn undo" data-act="undone">Undo "marked complete"</button>' : '') +
     '<button class="fin" data-act="finish"' + (c.after ? '' : ' disabled') + '>' + ICON.check + '<span>' + (job.sr ? 'Remake service report' : 'Finish job') + '</span></button>' +
     (c.after ? '' : '<div class="hint">Finish unlocks once there is at least one after photo</div>');
 }
@@ -512,6 +525,38 @@ function removeFlow(job, kind, photo) {
   });
 }
 
+/** Two yes's to push a job through to green without matching photo counts. Shared with the other phone. */
+function markDone(on) {
+  const f = findJob(S.view.ref, S.view.wo); if (!f) return;
+  const job = f.job, c = counts(job);
+  if (!navigator.onLine) { toast('Needs signal so it shows on both phones.'); return; }
+  const steps = on ? [
+    { t: 'Mark ' + job.ref + ' complete?', d: 'It has ' + c.before + ' before and ' + c.after + ' after photos. Only do this if the rest of the work isn\'t happening.', yes: 'Yes, complete', yesLeft: false },
+    { t: 'Sure?', d: 'It turns green on both phones, even without matching photos.', yes: 'Yes, mark it', yesLeft: true },
+  ] : [{ t: 'Undo marked complete?', d: 'It goes back to amber until the photos match.', yes: 'Yes, undo', yesLeft: false }];
+  const el = document.createElement('div'); el.className = 'confirm'; document.body.appendChild(el);
+  let k = 0;
+  const draw = () => {
+    const st = steps[k];
+    const yes = '<button class="cy" data-c="y" disabled>' + st.yes + '</button>', no = '<button class="cn" data-c="n" disabled>Cancel</button>';
+    el.innerHTML = '<div class="cbox">' + (steps.length > 1 ? '<div class="cstep">Step ' + (k + 1) + ' of ' + steps.length + '</div>' : '') +
+      '<h3>' + esc(st.t) + '</h3><p>' + esc(st.d) + '</p><div class="cbtns">' + (st.yesLeft ? yes + no : no + yes) + '</div></div>';
+    setTimeout(() => el.querySelectorAll('button').forEach(b => { b.disabled = false; }), 500);
+  };
+  el.addEventListener('click', async e => {
+    const b = e.target.closest('[data-c]'); if (!b || b.disabled) return;
+    if (b.dataset.c === 'n') { el.remove(); return; }
+    if (k < steps.length - 1) { k++; draw(); return; }
+    b.disabled = true; b.textContent = 'Saving…';
+    try {
+      const out = await api('markDone', { ref: job.ref, wo: job.wo, done: on, by: ls.get('who', '') });
+      job.done = out.done; ls.set('months', S.months); el.remove(); render();
+      toast(on ? job.ref + ' marked complete' : 'Undone');
+    } catch (err) { el.remove(); toast('Could not save: ' + err.message); }
+  });
+  draw();
+}
+
 /* ---------------- docs + finish sheets ---------------- */
 
 async function docsSheet() {
@@ -614,6 +659,8 @@ document.addEventListener('click', e => {
   else if (a === 'viewq') viewer(b.dataset.k, b.dataset.id);
   else if (a === 'docs') docsSheet().catch(err => toast(err.message));
   else if (a === 'finish') finishSheet();
+  else if (a === 'markdone') markDone(true);
+  else if (a === 'undone') markDone(false);
 });
 document.addEventListener('input', e => {
   if (e.target.dataset.act === 'search') {

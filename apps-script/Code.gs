@@ -28,7 +28,7 @@ const ARCHIVE = 'Archived (removed in app)';   // inside Before Photos / After P
 // WO tab columns (0-based). G "PO Received" was added in Nov 2026, so everything from G on moved one to the right.
 const W = { ref: 0, wo: 1, loc: 2, job: 3, status: 5, price: 8, month: 11 };
 // Folders tab columns (1-based)
-const F = { key: 1, ref: 2, wo: 3, url: 4, invoice: 5, sr: 6, before: 9, after: 10, name: 11, docs: 12 };
+const F = { key: 1, ref: 2, wo: 3, url: 4, invoice: 5, sr: 6, before: 9, after: 10, name: 11, docs: 12, done: 13 };  // M = "Marked complete" (app override)
 
 /* ================= web app ================= */
 
@@ -47,6 +47,7 @@ function doPost(e) {
       case 'photo': return json_({ ok: true, id: body.id, img: thumb_(body.id, body.size || 1200) });
       case 'docs': return json_({ ok: true, docs: listDocs_(body.ref, body.wo) });
       case 'doc': return json_({ ok: true, id: body.id, data: docData_(body.id) });
+      case 'markDone': return json_(withLock_(() => markDone_(body)));
       case 'archive': return json_(withLock_(() => archive_(body)));
       case 'upload': return json_(withLock_(() => upload_(body)));
       case 'finish': return json_(withLock_(() => finish_(body)));
@@ -162,7 +163,7 @@ function months_() {
     const f = findFolder_(folders, r.ref, r.wo);
     by[r.ym].push({
       ref: r.ref, wo: r.wo, loc: r.loc, job: r.job, type: type, status: r.status, price: money_(r.price),
-      before: f ? num_(f.before) : 0, after: f ? num_(f.after) : 0, sr: !!(f && /✓/.test(f.sr)), hasFolder: !!f,
+      before: f ? num_(f.before) : 0, after: f ? num_(f.after) : 0, sr: !!(f && /✓/.test(f.sr)), hasFolder: !!f, done: f ? f.done : '',
     });
   });
   return want.map(ym => {
@@ -184,7 +185,7 @@ function foldersIndex_() {
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r[F.url - 1]) continue;
-    out.push({ row: i + 1, ref: s_(r[F.ref - 1]), wo: s_(r[F.wo - 1]), url: r[F.url - 1], sr: r[F.sr - 1], before: r[F.before - 1], after: r[F.after - 1], docs: s_(r[F.docs - 1]) });
+    out.push({ row: i + 1, ref: s_(r[F.ref - 1]), wo: s_(r[F.wo - 1]), url: r[F.url - 1], sr: r[F.sr - 1], before: r[F.before - 1], after: r[F.after - 1], docs: s_(r[F.docs - 1]), done: s_(r[F.done - 1]) });
   }
   return out;
 }
@@ -222,6 +223,16 @@ function jobFolder_(ref, wo) {
   line[F.url - 1] = folder.getUrl(); line[F.before - 1] = 0; line[F.after - 1] = 0; line[F.name - 1] = name; line[F.docs - 1] = docs.getId();
   sh.getRange(row, 1, 1, 12).setValues([line]);
   return { folder: folder, row: row };
+}
+
+/** Manual "complete anyway" (e.g. fewer after photos than before). Shared by both phones via the Folders tab, column M. */
+function markDone_(b) {
+  const jf = jobFolder_(s_(b.ref), s_(b.wo));
+  const sh = foldersSheet_();
+  if (!s_(sh.getRange(1, F.done).getValue())) sh.getRange(1, F.done).setValue('Marked complete');
+  const val = b.done ? 'Yes · ' + s_(b.by || 'app') + ' · ' + Utilities.formatDate(new Date(), TZ, 'd MMM') : '';
+  sh.getRange(jf.row, F.done).setValue(val);
+  return { ok: true, done: val };
 }
 
 /* ================= photos ================= */
