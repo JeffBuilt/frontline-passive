@@ -87,6 +87,8 @@ function sha256_(s) {
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('Frontline')
     .addItem('Set app PIN', 'setPinPrompt')
+    .addItem('Turn on nightly photo tidy', 'setupSweep')
+    .addItem('Run photo tidy now', 'nightlySweep')
     .addToUi();
 }
 
@@ -468,3 +470,63 @@ function finish_(b) {
 
 /** Editor test: builds the SR for one job without the app. */
 function testReport() { Logger.log(finish_({ ref: 'VP26150', wo: '501259087', techs: 'Jeffrey, Harrison & Stephan' })); }
+
+/* ================= nightly photo tidy ================= */
+
+/**
+ * For photos put straight into Drive (not through the app): renames anything in a job's Before/After Photos folder
+ * that isn't in the standard "VP26155 - HSB L4 - Before 3.jpg" form, and brings the photo counts on the Folders tab up to date.
+ * Covers last month, this month and next month. Archived folders are left alone.
+ */
+function nightlySweep() {
+  const started = Date.now();
+  const now = new Date();
+  const want = [-1, 0, 1].map(k => Utilities.formatDate(new Date(now.getFullYear(), now.getMonth() + k, 1), TZ, 'yyyy-MM'));
+  const index = foldersIndex_();
+  const sheet = foldersSheet_();
+  const seen = {};
+  let renamed = 0, recounted = 0;
+  for (const job of readWO_()) {
+    if (want.indexOf(job.ym) < 0 || !job.ref || type_(job.job, job.ref) === 'sensors') continue;
+    const f = findFolder_(index, job.ref, job.wo);
+    if (!f || seen[f.row]) continue;
+    seen[f.row] = true;
+    if (Date.now() - started > 5 * 60 * 1000) { Logger.log('Stopped early (time limit); the rest is picked up next run'); break; }
+    let folder;
+    try { folder = DriveApp.getFolderById(idFromUrl_(f.url)); } catch (e) { continue; }
+    for (const kind of ['before', 'after']) {
+      const it = folder.getFoldersByName(SUB[kind]);
+      if (!it.hasNext()) continue;
+      const sub = it.next();
+      const label = kind === 'after' ? 'After' : 'Before';
+      const ok = new RegExp('^' + job.ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b.*\\b(Before|After) \\d+', 'i');
+      const loose = [];
+      const files = sub.getFiles();
+      while (files.hasNext()) {
+        const x = files.next();
+        if (/^image\//.test(x.getMimeType()) && !ok.test(x.getName())) loose.push(x);
+      }
+      loose.sort((a, b) => a.getDateCreated() - b.getDateCreated());
+      for (const x of loose) {
+        const ext = (x.getName().match(/\.(\w{2,4})$/) || [, 'jpg'])[1].toLowerCase();
+        const n = nextNumber_(sub, label);
+        const name = [job.ref, short_(job.loc), label + ' ' + n].filter(String).join(' - ').replace(/[\/\\:*?"<>|]/g, '-') + '.' + ext;
+        x.setDescription('Original name: ' + x.getName());
+        x.setName(name);
+        renamed++;
+      }
+      const count = images_(sub).length;
+      const col = kind === 'after' ? F.after : F.before;
+      if (Number(sheet.getRange(f.row, col).getValue() || 0) !== count) { sheet.getRange(f.row, col).setValue(count); recounted++; }
+    }
+  }
+  Logger.log('Photo tidy: ' + renamed + ' renamed, ' + recounted + ' counts fixed');
+  return { renamed: renamed, recounted: recounted };
+}
+
+/** Run once (sheet menu Frontline > Turn on nightly photo tidy). Runs every night around 2am. */
+function setupSweep() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === 'nightlySweep').forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('nightlySweep').timeBased().atHour(2).everyDays(1).inTimezone(TZ).create();
+  try { SpreadsheetApp.getUi().alert('Nightly photo tidy is on. It runs around 2am every night.'); } catch (e) { Logger.log('Nightly photo tidy is on'); }
+}
