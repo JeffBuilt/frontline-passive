@@ -1,7 +1,7 @@
 /* Frontline app v3.0 - stripped back: month > jobs > before/after photos > docs > report. Offline-first. */
 'use strict';
 
-const APP_VERSION = '3.0.2';
+const APP_VERSION = '3.1.0';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const MAX_PX = 1600, JPEG_Q = 0.78;
 const TYPES = [['passive', 'Passive fire'], ['filters', 'Filters'], ['water', 'Water filters'], ['sit', 'SIT'], ['repairs', 'Fire repairs'], ['other', 'Other']];
@@ -399,7 +399,7 @@ async function fillThumbs() {
     const box = $('#th-' + kind); if (!box) continue;
     const local = pending(job, kind).map(q => '<button data-act="viewq" data-k="' + kind + '" data-id="' + q.k + '"><img src="' + q.data + '"><span class="q">Uploading</span></button>').join('');
     if (local) box.innerHTML = local;
-    const list = await photoList(job, kind);
+    const list = await photoList(job, kind, navigator.onLine);
     if (S.view.screen !== 'job' || S.view.ref !== job.ref) return;
     const el = $('#th-' + kind); if (!el) return;
     if (!list.length && !local) continue;
@@ -414,32 +414,102 @@ async function fillThumbs() {
 
 async function viewer(kind, start) {
   const f = findJob(S.view.ref, S.view.wo); if (!f) return;
-  const list = (await photoList(f.job, kind)).map(p => ({ id: p.id, name: p.name }))
-    .concat(pending(f.job, kind).map(q => ({ local: q.data, name: 'Waiting to upload', qk: q.k })));
+  const job = f.job;
+  const build = async () => (await photoList(job, kind)).map(p => ({ id: p.id, name: p.name }))
+    .concat(pending(job, kind).map(q => ({ local: q.data, name: 'Waiting to upload', qk: q.k })));
+  let list = await build();
   if (!list.length) return;
-  let i = typeof start === 'string' ? Math.max(0, list.findIndex(x => x.qk === start)) : (start || 0);
+  let i = typeof start === 'string' ? Math.max(0, list.findIndex(x => x.qk === start)) : Math.min(start || 0, list.length - 1);
+  let zoom = false;
   const el = document.createElement('div'); el.className = 'viewer';
-  el.innerHTML = '<div class="vbar"><button class="back" data-v="x">✕</button><span></span><span style="flex:0;width:54px"></span></div>' +
-    '<div class="im"><img></div><div class="nav"><button data-v="p">‹ Prev</button><button data-v="n">Next ›</button></div>';
+  el.innerHTML = '<div class="vbar"><button class="vx" data-v="x">✕</button><span class="vc"></span><button class="vdel" data-v="del">' +
+    '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>Remove</button></div>' +
+    '<div class="im"><img alt=""></div><div class="vname"></div>' +
+    '<div class="nav"><button data-v="p">‹ Prev</button><button data-v="n">Next ›</button></div>';
   document.body.appendChild(el);
-  const img = el.querySelector('img'), cap = el.querySelector('.vbar span');
+  const img = el.querySelector('img'), cap = el.querySelector('.vc'), nm = el.querySelector('.vname'), box = el.querySelector('.im');
+  const big = {};   // full-size versions, memory only
   const show = async () => {
-    const it = list[i]; cap.textContent = (i + 1) + ' / ' + list.length + (kind === 'before' ? ' · BEFORE' : ' · AFTER');
-    img.src = it.local || ''; if (!it.local) { img.src = await image(it.id).catch(() => '') || ''; }
+    const it = list[i]; zoom = false; box.classList.remove('z');
+    cap.textContent = (kind === 'before' ? 'Before' : 'After') + ' · ' + (i + 1) + ' of ' + list.length;
+    nm.textContent = it.name.replace(/\.[a-z]+$/i, '');
+    el.querySelector('.vdel').style.visibility = it.local ? 'hidden' : 'visible';
+    if (it.local) { img.src = it.local; return; }
+    img.src = imgMem[it.id] || (await image(it.id).catch(() => '')) || '';
+    if (navigator.onLine && !big[it.id]) {      // swap in a sharper copy for zooming
+      const id = it.id;
+      api('photo', { id: id, size: 2400 }, 60000).then(o => { big[id] = o.img; if (list[i] && list[i].id === id) img.src = o.img; }).catch(() => {});
+    } else if (big[it.id]) img.src = big[it.id];
   };
+  const close = () => { el.remove(); render(); };
   el.addEventListener('click', e => {
     const v = e.target.closest('[data-v]'); if (!v) return;
-    if (v.dataset.v === 'x') el.remove();
+    if (v.dataset.v === 'x') close();
     if (v.dataset.v === 'p') { i = (i - 1 + list.length) % list.length; show(); }
     if (v.dataset.v === 'n') { i = (i + 1) % list.length; show(); }
+    if (v.dataset.v === 'del') removeFlow(job, kind, list[i]).then(async gone => {
+      if (!gone) return;
+      list = await build();
+      if (!list.length) { close(); return; }
+      i = Math.min(i, list.length - 1); show();
+    });
   });
-  let x0 = null;
-  el.querySelector('.im').addEventListener('touchstart', e => { x0 = e.touches[0].clientX; }, { passive: true });
-  el.querySelector('.im').addEventListener('touchend', e => {
+  // double-tap to zoom, drag to pan while zoomed, swipe to change photo when not
+  let lastTap = 0, x0 = null;
+  box.addEventListener('click', e => {
+    const now = Date.now();
+    if (now - lastTap < 320) {
+      zoom = !zoom; box.classList.toggle('z', zoom);
+      if (zoom) { const r = box.getBoundingClientRect(); box.scrollLeft = (e.clientX - r.left) * 1.5; box.scrollTop = (e.clientY - r.top) * 1.5; }
+    }
+    lastTap = now;
+  });
+  box.addEventListener('touchstart', e => { x0 = zoom ? null : e.touches[0].clientX; }, { passive: true });
+  box.addEventListener('touchend', e => {
     if (x0 === null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null;
-    if (Math.abs(dx) > 50) { i = (i + (dx < 0 ? 1 : -1) + list.length) % list.length; show(); }
+    if (Math.abs(dx) > 60) { i = (i + (dx < 0 ? 1 : -1) + list.length) % list.length; show(); }
   });
   show();
+}
+
+/** Three separate yes's, buttons swap sides and wait a moment each step, so it can't happen by a stray tap. */
+function removeFlow(job, kind, photo) {
+  return new Promise(resolve => {
+    if (!photo || photo.local) { resolve(false); return; }
+    if (!navigator.onLine) { toast('Needs signal to remove a photo.'); resolve(false); return; }
+    const label = kind === 'before' ? 'before' : 'after';
+    const steps = [
+      { t: 'Remove this photo?', d: 'From the ' + label + ' photos of ' + job.ref + '.', yes: 'Yes, remove', yesLeft: false },
+      { t: 'Are you sure?', d: 'It won\'t be counted and won\'t go in the service report.', yes: 'Yes, I\'m sure', yesLeft: true },
+      { t: 'Last check', d: 'It moves to an Archived folder in Drive, so it can be got back if this was a mistake.', yes: 'Remove photo', yesLeft: false, red: true },
+    ];
+    const el = document.createElement('div'); el.className = 'confirm';
+    document.body.appendChild(el);
+    let k = 0;
+    const draw = () => {
+      const st = steps[k];
+      const yes = '<button class="cy' + (st.red ? ' red' : '') + '" data-c="y" disabled>' + st.yes + '</button>';
+      const no = '<button class="cn" data-c="n" disabled>' + (k ? 'No, keep it' : 'Cancel') + '</button>';
+      el.innerHTML = '<div class="cbox"><div class="cstep">Step ' + (k + 1) + ' of 3</div>' +
+        (photo.id && imgMem[photo.id] ? '<img src="' + imgMem[photo.id] + '" alt="">' : '') +
+        '<h3>' + st.t + '</h3><p>' + esc(st.d) + '</p><div class="cbtns">' + (st.yesLeft ? yes + no : no + yes) + '</div></div>';
+      setTimeout(() => el.querySelectorAll('button').forEach(b => { b.disabled = false; }), 600);
+    };
+    el.addEventListener('click', async e => {
+      const b = e.target.closest('[data-c]'); if (!b || b.disabled) return;
+      if (b.dataset.c === 'n') { el.remove(); resolve(false); return; }
+      if (k < steps.length - 1) { k++; draw(); return; }
+      b.disabled = true; b.textContent = 'Removing…';
+      try {
+        const out = await api('archive', { ref: job.ref, wo: job.wo, kind: kind, id: photo.id });
+        job[kind] = out.count; ls.set('months', S.months);
+        delete S.lists[job.ref + '|' + job.wo + '|' + kind];
+        await photoList(job, kind, true);
+        el.remove(); toast('Photo removed · kept in the Archived folder in Drive'); resolve(true);
+      } catch (err) { el.remove(); toast('Could not remove: ' + err.message, 4500); resolve(false); }
+    });
+    draw();
+  });
 }
 
 /* ---------------- docs + finish sheets ---------------- */

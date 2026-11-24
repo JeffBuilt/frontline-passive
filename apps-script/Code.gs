@@ -23,6 +23,7 @@ const FIRST_YEAR = 2026;   // the WO tab's first month block is in this year
 const TZ = 'Australia/Melbourne';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const SUB = { before: 'Before Photos', after: 'After Photos', docs: 'Docs' };
+const ARCHIVE = 'Archived (removed in app)';   // inside Before Photos / After Photos; never in counts or reports
 
 // WO tab columns (0-based). G "PO Received" was added in Nov 2026, so everything from G on moved one to the right.
 const W = { ref: 0, wo: 1, loc: 2, job: 3, status: 5, price: 8, month: 11 };
@@ -46,6 +47,7 @@ function doPost(e) {
       case 'photo': return json_({ ok: true, id: body.id, img: thumb_(body.id, body.size || 1200) });
       case 'docs': return json_({ ok: true, docs: listDocs_(body.ref, body.wo) });
       case 'doc': return json_({ ok: true, id: body.id, data: docData_(body.id) });
+      case 'archive': return json_(withLock_(() => archive_(body)));
       case 'upload': return json_(withLock_(() => upload_(body)));
       case 'finish': return json_(withLock_(() => finish_(body)));
       default: throw new Error('Unknown action');
@@ -285,16 +287,43 @@ function upload_(b) {
   if (b.uid) { const done = cache.get('UP_' + b.uid); if (done) return JSON.parse(done); } // retry of an upload that already landed
   const jf = jobFolder_(s_(b.ref), s_(b.wo));
   const sub = child_(jf.folder, SUB[kind]);
-  const n = images_(sub).length + 1;
   const label = kind === 'after' ? 'After' : 'Before';
+  const n = nextNumber_(sub, label);
   const name = [s_(b.ref), short_(b.loc), s_(b.unit), label + ' ' + n].filter(String).join(' - ').replace(/[\/\\:*?"<>|]/g, '-') + '.jpg';
   const data = String(b.data || '').replace(/^data:[^,]+,/, '');
   if (!data) throw new Error('No photo data');
   sub.createFile(Utilities.newBlob(Utilities.base64Decode(data), 'image/jpeg', name));
-  foldersSheet_().getRange(jf.row, kind === 'after' ? F.after : F.before).setValue(n);
-  const out = { ok: true, name: name, count: n, kind: kind };
+  const count = images_(sub).length;
+  foldersSheet_().getRange(jf.row, kind === 'after' ? F.after : F.before).setValue(count);
+  const out = { ok: true, name: name, count: count, kind: kind };
   if (b.uid) cache.put('UP_' + b.uid, JSON.stringify(out), 21600);
   return out;
+}
+
+/** Next free photo number, counting archived ones too so names never repeat. */
+function nextNumber_(sub, label) {
+  const re = new RegExp('\\b' + label + ' (\\d+)\\b', 'i');
+  let max = 0;
+  const scan = folder => { const it = folder.getFiles(); while (it.hasNext()) { const m = it.next().getName().match(re); if (m) max = Math.max(max, Number(m[1])); } };
+  scan(sub);
+  const a = sub.getFoldersByName(ARCHIVE); if (a.hasNext()) scan(a.next());
+  return Math.max(max, images_(sub).length) + 1;
+}
+
+/** "Delete" from the app: moves the photo into an Archived folder beside it. Nothing is ever trashed. */
+function archive_(b) {
+  const kind = b.kind === 'after' ? 'after' : 'before';
+  const jf = jobFolder_(s_(b.ref), s_(b.wo));
+  const sub = child_(jf.folder, SUB[kind]);
+  const file = DriveApp.getFileById(String(b.id));
+  const parents = file.getParents(); let inside = false;
+  while (parents.hasNext()) if (parents.next().getId() === sub.getId()) inside = true;
+  if (!inside) throw new Error('That photo is not in this job\'s ' + SUB[kind] + ' folder');
+  file.moveTo(child_(sub, ARCHIVE));
+  file.setDescription('Removed in the Frontline app ' + Utilities.formatDate(new Date(), TZ, 'd MMM yyyy h:mm a'));
+  const count = images_(sub).length;
+  foldersSheet_().getRange(jf.row, kind === 'after' ? F.after : F.before).setValue(count);
+  return { ok: true, count: count, kind: kind };
 }
 
 /** "HSB L3.5 External Plant Room - Air Intake" -> "HSB L3.5" (building + level), as in the existing photo names. */
