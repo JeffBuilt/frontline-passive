@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Veridian + Frontline + Pulse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #21334a; --ink2: #182739; --fire: #e8572a; --fire-dk: #c2410c; --vp: #2e7d64; --vp-lt: #dcefe8; --pu: #0a62c4; --pu-lt: #dde9f8;
+    --paid: #21334a; --inv: #4b6a8c; --done: #8fa6bf; --appr: #c5d2de; --pipe: #e3e8ed;
+    --bg: #eef1f4; --card: #fff; --line: #dde2e7; --muted: #66727e; --text: #1b2733; --hivis: #ffd23f; --red: #c62828;
+    --body: 'Barlow', system-ui, sans-serif; --display: 'Barlow Condensed', 'Barlow', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 var(--body); -webkit-text-size-adjust: 100%; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 0 18px 60px; }
+
+  .top { background: var(--ink); color: #fff; }
+  .top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-top: 16px; padding-bottom: 16px; }
+  .marks { display: flex; align-items: center; gap: 16px; }
+  .vpmark { font: 700 24px/1 var(--display); letter-spacing: .14em; color: #fff; }
+  .vpmark small { display: block; font: 600 11px var(--body); letter-spacing: .32em; color: #9fb3c5; margin-top: 4px; }
+  .marks .plus { color: #6f859b; font: 600 22px var(--display); }
+  .vpmark.veridian { color: #8fd1b9; } .vpmark.pulse { color: #9cc3f0; }
+
+  .marks img { height: 38px; width: auto; display: block; }
+  .marks img.lg-v { height: 34px; } .marks img.lg-p { height: 36px; filter: invert(1) hue-rotate(180deg) saturate(1.4); }
+  .top-r { display: flex; align-items: center; gap: 10px; color: #c9d3dd; font-size: 14px; }
+  .btn-ghost { background: transparent; border: 1px solid #4a5f7a; color: #fff; border-radius: 999px; padding: 7px 14px; font-weight: 600; }
+
+  .filters { position: sticky; top: 0; z-index: 20; background: rgba(238,241,244,.94); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .filters .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 10px; padding-bottom: 10px; }
+  .seg { display: inline-flex; background: #d9dee4; border-radius: 12px; padding: 3px; }
+  .seg button { border: 0; background: none; border-radius: 9px; padding: 7px 13px; font-weight: 600; color: #4a5866; min-height: 36px; white-space: nowrap; }
+  .seg button.on { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(33,51,74,.18); }
+  
+  select.period { border: 0; background: #d9dee4; border-radius: 12px; padding: 9px 12px; font: 600 15px var(--body); color: var(--ink); min-height: 42px; }
+  .morebtn { border: 1px solid #c4ccd4; background: #fff; border-radius: 12px; padding: 8px 14px; font-weight: 600; min-height: 42px; }
+  .morebtn b { background: var(--fire); color: #fff; border-radius: 999px; padding: 0 7px; font-size: 13px; margin-left: 4px; }
+  .fpanel { display: none; width: 100%; background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; margin-top: 4px; }
+  .fpanel.on { display: grid; gap: 12px; }
+  .fgroup h4 { margin: 0 0 6px; font: 700 13px var(--display); letter-spacing: .08em; color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { border: 1px solid #c4ccd4; background: #fff; border-radius: 999px; padding: 6px 12px; font-size: 15px; font-weight: 500; }
+  .chip.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+  .fpanel .reset { justify-self: start; border: 0; background: none; color: var(--fire-dk); font-weight: 600; padding: 0; }
+  .custom { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .custom input { border: 1px solid #c4ccd4; border-radius: 10px; padding: 7px 10px; font: 15px var(--body); }
+
+  .hero { background: var(--ink); color: #fff; border-radius: 24px; padding: 26px 28px 24px; margin: 18px 0 14px; }
+  .hero-k { margin: 0; color: #9fb3c5; font: 700 14px var(--display); letter-spacing: .1em; }
+  .hero-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 20px; align-items: end; margin-top: 6px; }
+  .hero-big { font: 700 92px/.92 var(--display); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .hero-big + p, .hero-s p { margin: 6px 0 0; color: #c9d3dd; font-size: 16px; }
+  .hero-s strong { display: block; font: 700 44px/1 var(--display); font-variant-numeric: tabular-nums; }
+  .progress { margin-top: 22px; }
+  .pbar { display: flex; height: 22px; border-radius: 11px; overflow: hidden; background: rgba(255,255,255,.08); }
+  .pbar span { display: block; height: 100%; }
+  .pbar .s-paid { background: #fff; } .pbar .s-inv { background: #a9bdd1; } .pbar .s-done { background: #6f8aa7; } .pbar .s-appr { background: #4c6584; }
+  .pbar .s-pipe { background: repeating-linear-gradient(135deg, #3f5876 0 5px, #33496a 5px 10px); }
+  .pkey { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 10px; color: #c9d3dd; font-size: 14px; }
+  .pkey i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .pkey b { color: #fff; font-weight: 600; }
+
+  .kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .kpi { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 16px 18px; display: grid; gap: 2px; position: relative; }
+  .kpi .l { color: var(--muted); font-weight: 600; font-size: 15px; display: flex; align-items: center; gap: 7px; }
+  .kpi .l i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .kpi .v { font: 700 36px/1.05 var(--display); font-variant-numeric: tabular-nums; }
+  .kpi .n { color: var(--muted); font-size: 14px; }
+  .kpi .n.bad { color: var(--red); font-weight: 600; }
+
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 20px 22px; margin-bottom: 14px; }
+  .p-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-bottom: 12px; }
+  .p-head h3 { margin: 0; font: 700 24px var(--display); }
+  .p-head p { margin: 0; color: var(--muted); font-size: 15px; }
+  .p-tools { display: flex; gap: 8px; align-items: center; }
+  .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+  .two > .panel { margin-bottom: 0; }
+  .two { margin-bottom: 14px; }
+
+  .chart { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .chart svg { display: block; width: 100%; min-width: 680px; height: auto; }
+  .chart .grid { stroke: #e9edf1; }
+  .chart .ax { fill: #7b8792; font: 500 12px var(--body); }
+  .chart .ax.now { fill: var(--ink); font-weight: 700; }
+  .chart .tot { fill: var(--ink); font: 700 12px var(--body); }
+  .chart .today { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 4 3; }
+  .chart .todayl { fill: var(--ink); font: 700 11px var(--body); }
+  .chart .hit { fill: transparent; }
+  .chart .col:hover .hit { fill: rgba(33,51,74,.05); }
+  .key { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted); font-size: 14px; margin-top: 10px; }
+  .key i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .hatch { background: repeating-linear-gradient(135deg, #b8c4cf 0 3px, #eef1f4 3px 6px); }
+
+  .pstats { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .pstat { background: #f5f7f9; border-radius: 14px; padding: 14px 16px; }
+  .pstat.main { background: var(--ink); color: #fff; }
+  .pstat span { display: block; font-size: 14px; font-weight: 600; color: var(--muted); }
+  .pstat.main span, .pstat.main em { color: #b9c6d3; }
+  .pstat strong { display: block; font: 700 40px/1.05 var(--display); font-variant-numeric: tabular-nums; }
+  .pstat em { font-style: normal; font-size: 14px; color: var(--muted); }
+  table.pt { width: 100%; border-collapse: collapse; font-size: 15px; margin-top: 14px; }
+  table.pt th { text-align: right; color: var(--muted); font-weight: 600; font-size: 13px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  table.pt th:first-child, table.pt td:first-child { text-align: left; }
+  table.pt td { text-align: right; padding: 8px; border-bottom: 1px solid #eef1f4; font-variant-numeric: tabular-nums; }
+  table.pt tr.past td { color: var(--muted); }
+  table.pt tr.now td { background: #f1f4f7; font-weight: 700; }
+  table.pt td.p { font-weight: 700; color: var(--ink); }
+  table.pt tfoot td { font-weight: 700; border-top: 2px solid var(--ink); border-bottom: 0; }
+  .rules { display: none; background: #f5f7f9; border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
+  .rules.on { display: block; }
+  .rules-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 18px; }
+  .rule { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 8px; align-items: center; }
+  .rule label { font-weight: 600; font-size: 15px; line-height: 1.2; }
+  .rule label small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+  .rule .inp { display: flex; align-items: center; gap: 4px; background: #fff; border: 1px solid #c4ccd4; border-radius: 10px; padding: 0 8px; }
+  .rule input { width: 100%; border: 0; background: none; font: 600 16px var(--body); padding: 8px 0; text-align: right; outline: none; }
+  .rules h4 { margin: 14px 0 8px; font: 700 13px var(--display); letter-spacing: .08em; color: var(--muted); }
+  .rules h4:first-child { margin-top: 0; }
+  .save { background: var(--ink); color: #fff; border: 0; border-radius: 12px; padding: 10px 18px; font-weight: 700; min-height: 42px; }
+  .save:disabled { opacity: .6; }
+  .rules .save { margin-top: 14px; }
+  .estdot { display: inline-block; font: 700 10px var(--body); background: #fff4d6; color: #8a6400; border-radius: 4px; padding: 0 4px; margin-right: 4px; vertical-align: 1px; text-transform: lowercase; }
+  .p-tools a.morebtn { text-decoration: none; color: inherit; display: inline-flex; align-items: center; }
+  .p-tools .save, .mf-actions .save { margin-top: 0; }
+  .matform { background: #f5f7f9; border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; display: grid; gap: 10px; }
+  .mf-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+  .mf-row label { display: grid; gap: 4px; font-size: 14px; font-weight: 600; color: var(--muted); }
+  .mf-row input, .mf-row select, .mrow select, .mrow input { border: 1px solid #c4ccd4; border-radius: 10px; padding: 9px 10px; font: 16px var(--body); background: #fff; color: var(--text); min-width: 0; }
+  .mf-actions { display: flex; gap: 14px; align-items: center; }
+  .linkbtn { border: 0; background: none; color: var(--ink); font-weight: 600; padding: 4px 0; text-decoration: underline; justify-self: start; }
+  h4.sub { margin: 14px 0 6px; font: 700 13px var(--display); letter-spacing: .08em; color: var(--muted); }
+  .mlist { display: grid; }
+  .mrow { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) 110px auto auto; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid #eef1f4; }
+  .mrow:not(.check) { grid-template-columns: minmax(0, 1fr) auto; }
+  .mrow.check { background: #fffaf0; margin: 0 -8px; padding: 9px 8px; border-radius: 8px; }
+  .m-what b { display: block; font-weight: 600; }
+  .m-what span { color: var(--muted); font-size: 13px; }
+  .m-what a { color: var(--ink); }
+  .m-amt { font: 700 18px var(--display); font-variant-numeric: tabular-nums; }
+  .save.small { padding: 8px 14px; }
+  .bad { color: var(--red); }
+  .split { display: grid; gap: 16px; }
+  .split-row { display: grid; grid-template-columns: 140px minmax(0, 1fr) 130px; gap: 14px; align-items: center; }
+  .split-name { font: 700 22px var(--display); }
+  .split-name.Frontline { color: var(--fire-dk); } .split-name.Veridian { color: var(--vp); } .split-name.Pulse { color: var(--pu); }
+  .split-name span { display: block; font: 500 13px var(--body); color: var(--muted); }
+  .sbar { display: flex; height: 26px; border-radius: 8px; overflow: hidden; background: #f0f2f5; }
+  .sbar span { display: block; height: 100%; }
+  .split-v { text-align: right; font: 700 26px var(--display); font-variant-numeric: tabular-nums; }
+  .split-v span { display: block; font: 500 13px var(--body); color: var(--muted); }
+
+  .rank { display: grid; gap: 10px; }
+  .r-row { display: grid; grid-template-columns: minmax(110px, 170px) minmax(0, 1fr) 96px; gap: 12px; align-items: center; cursor: pointer; border-radius: 8px; }
+  .r-row:hover .r-name { color: var(--fire-dk); }
+  .r-name { font-weight: 600; line-height: 1.2; }
+  .r-name span { display: block; color: var(--muted); font-weight: 400; font-size: 13px; }
+  .r-bar { height: 14px; border-radius: 7px; background: #f0f2f5; overflow: hidden; display: flex; }
+  .r-bar span { display: block; height: 100%; }
+  .r-v { text-align: right; font: 700 19px var(--display); font-variant-numeric: tabular-nums; }
+
+  .pay { display: grid; gap: 0; }
+  .pay-row { display: grid; grid-template-columns: 92px minmax(0, 1fr) 110px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid #eef1f4; }
+  .pay-row:last-child { border-bottom: 0; }
+  .pay-d { font: 700 18px/1.1 var(--display); }
+  .pay-d span { display: block; font: 500 12px var(--body); color: var(--muted); }
+  .pay-row.late .pay-d { color: var(--red); }
+  .pay-j { min-width: 0; }
+  .pay-j b { font-weight: 600; }
+  .pay-j div { color: var(--muted); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pay-v { text-align: right; font: 700 20px var(--display); font-variant-numeric: tabular-nums; }
+  .tag { display: inline-block; font: 600 12px var(--body); border-radius: 6px; padding: 1px 7px; margin-left: 6px; vertical-align: 1px; }
+  .tag.Veridian { background: var(--vp-lt); color: #1f5c49; } .tag.Frontline { background: #fde3d8; color: var(--fire-dk); } .tag.Pulse { background: var(--pu-lt); color: #1f4f88; }
+  .tag.late { background: #fde2e2; color: var(--red); }
+  .tag.est { background: #eef1f4; color: var(--muted); }
+
+  .fl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 18px; align-items: center; background: #fff; border: 1px solid var(--line); border-left: 0; }
+  .fl-logo { background: var(--ink); border-radius: 14px; padding: 14px 16px; }
+  .fl-logo img { height: 34px; display: block; }
+  .fl-nums { display: flex; flex-wrap: wrap; gap: 10px 28px; }
+  .fl-nums div { font: 700 30px/1 var(--display); }
+  .fl-nums span { display: block; font: 500 14px var(--body); color: var(--muted); margin-top: 3px; }
+  .fl a { color: var(--fire-dk); font-weight: 600; }
+
+  .jobs-tools { display: flex; gap: 8px; flex-wrap: wrap; }
+  .jobs-tools input { flex: 1 1 220px; border: 1px solid #c4ccd4; border-radius: 12px; padding: 10px 12px; font: 16px var(--body); }
+  table.jobs { width: 100%; border-collapse: collapse; font-size: 15px; margin-top: 10px; }
+  table.jobs th { text-align: left; color: var(--muted); font-weight: 600; font-size: 13px; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.jobs td { padding: 9px 8px; border-bottom: 1px solid #eef1f4; vertical-align: top; }
+  table.jobs td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+  table.jobs tr.mhead td { background: #f5f7f9; font: 700 16px var(--display); color: var(--ink); }
+  table.jobs tr.mhead td.num { font: 700 16px var(--display); }
+  .st { display: inline-block; font-size: 13px; font-weight: 600; border-radius: 6px; padding: 1px 8px; white-space: nowrap; }
+  .st.paid { background: var(--ink); color: #fff; } .st.invoiced { background: #dbe5ef; color: #2c4a6a; } .st.done { background: #e6edf3; color: #3d5670; }
+  .st.approved { background: #eef2f6; color: #3d5670; } .st.quoted, .st.rfq, .st.planned { background: #f3f4f6; color: var(--muted); } .st.lost { background: #fde2e2; color: var(--red); }
+  .tablewrap { overflow-x: auto; }
+  .more { margin-top: 12px; border: 1px solid #c4ccd4; background: #fff; border-radius: 12px; padding: 9px 16px; font-weight: 600; }
+  .muted { color: var(--muted); }
+  .foot { text-align: center; color: var(--muted); font-size: 14px; margin-top: 18px; }
+  .empty { color: var(--muted); padding: 10px 0; }
+
+  #tip { position: absolute; z-index: 50; background: var(--ink2); color: #fff; border-radius: 10px; padding: 10px 12px; font-size: 14px; line-height: 1.5; pointer-events: none; opacity: 0; transition: opacity .12s; box-shadow: 0 8px 24px rgba(24,39,57,.28); min-width: 190px; }
+  #tip.on { opacity: 1; }
+  #tip strong { display: block; font: 700 16px var(--display); margin-bottom: 2px; }
+  #tip div { display: flex; justify-content: space-between; gap: 16px; color: #c9d3dd; }
+  #tip div b { color: #fff; font-weight: 600; }
+  #tip i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; }
+
+  .enter .grow { animation: rise .7s cubic-bezier(.2,.8,.2,1) both; transform-box: fill-box; transform-origin: bottom; animation-delay: calc(var(--i, 0) * 28ms + 120ms); }
+  .enter .pbar span { animation: widen .9s cubic-bezier(.2,.8,.2,1) both; transform-origin: left; }
+  @keyframes rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+  @keyframes widen { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  @media (prefers-reduced-motion: reduce) { .enter .grow, .enter .pbar span { animation: none; } }
+
+  @media (max-width: 1000px) {
+    .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .kpis .kpi:first-child { grid-column: 1 / -1; }
+    .two { grid-template-columns: minmax(0, 1fr); }
+    .two > .panel { margin-bottom: 0; }
+    .hero-grid { grid-template-columns: 1fr 1fr; }
+    .hero-grid > :first-child { grid-column: 1 / -1; }
+  }
+  @media (max-width: 600px) {
+    .pstats { grid-template-columns: 1fr 1fr; } .pstats .main { grid-column: 1 / -1; } .pstat strong { font-size: 30px; }
+    table.pt .hide-s { display: none; }
+    .mrow.check { grid-template-columns: 1fr 1fr; } .mrow.check .m-what, .mrow.check select { grid-column: 1 / -1; }
+    .wrap { padding: 0 12px 50px; }
+    .marks { gap: 8px; }   .marks img { height: 22px; } .marks img.lg-v { height: 20px; } .marks img.lg-p { height: 21px; } .vpmark { font-size: 15px; letter-spacing: .08em; } .vpmark small { font-size: 8px; letter-spacing: .2em; } .marks .plus { font-size: 16px; }
+    .top-r .upd { display: none; }
+    .hero { padding: 20px 18px; border-radius: 18px; }
+    .hero-big { font-size: 64px; }
+    .hero-s strong { font-size: 32px; }
+    .kpi .v { font-size: 30px; }
+    .panel { padding: 16px; border-radius: 16px; }
+    .split-row { grid-template-columns: 1fr auto; } .split-row .sbar { grid-column: 1 / -1; grid-row: 2; }
+    .r-row { grid-template-columns: minmax(0, 1fr) 88px; } .r-row .r-bar { grid-column: 1 / -1; grid-row: 2; }
+    .pay-row { grid-template-columns: 70px minmax(0, 1fr) 84px; }
+    table.jobs .hide-s { display: none; }
+  }
+  @media print {
+    .filters, .btn-ghost, .more, .jobs-tools, #tip { display: none !important; }
+    body { background: #fff; }
+    .hero, .panel, .kpi { break-inside: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <div class="marks"><img class="lg-v" src="https://jeffbuilt.github.io/frontline-passive/brand/veridian-dark.webp" alt="Veridian Projects"><span class="plus">+</span><img src="https://jeffbuilt.github.io/frontline-passive/logo-header.png" alt="Frontline Compliance and Fire"><span class="plus">+</span><img class="lg-p" src="https://veridianpulse.com.au/wp-content/uploads/2025/09/Screenshot_2025-09-03_at_10.44.32_AM-removebg-preview.png" alt="Veridian Pulse"></div>
+  <div class="top-r"><span class="upd" id="upd"></span><button class="btn-ghost" id="refresh">Refresh</button></div>
+</div></header>
+<div class="filters"><div class="wrap" id="filters"></div></div>
+<main class="wrap" id="main"></main>
+<div id="tip" role="tooltip"></div>
+
+<script>
+const DATA = /*__DATA__*/null;
+'use strict';
+
+const STAGES = [
+  { k: 'paid', name: 'Paid', color: 'var(--paid)', hex: '#21334a' },
+  { k: 'invoiced', name: 'Invoiced, waiting on payment', short: 'Invoiced', color: 'var(--inv)', hex: '#4b6a8c' },
+  { k: 'done', name: 'Done, not invoiced', short: 'Done', color: 'var(--done)', hex: '#8fa6bf' },
+  { k: 'approved', name: 'Approved (WO), to do', short: 'Approved', color: 'var(--appr)', hex: '#c5d2de' },
+  { k: 'pipe', name: 'Quoted, RFQ or planned', short: 'Pipeline', color: 'url(#hatch)', hex: '#b8c4cf', hatch: true },
+];
+const PIPE = ['quoted', 'rfq', 'planned'];
+const stageOf = j => PIPE.includes(j.stage) ? 'pipe' : j.stage;
+const STATUS_GROUPS = [['paid', 'Paid'], ['invoiced', 'Invoiced'], ['done', 'Done'], ['approved', 'Approved'], ['quoted', 'Quoted'], ['rfq', 'RFQ'], ['planned', 'Planned']];
+const BIZ = { Veridian: { color: '#2e7d64', light: '#dcefe8', note: 'Filters, mechanical, reports', short: 'VP' }, Frontline: { color: '#e8572a', light: '#fde3d8', note: 'Passive fire, repairs, SIT', short: 'FL' }, Pulse: { color: '#0a62c4', light: '#dde9f8', note: 'IoT sensors and subscriptions', short: 'PU' } };
+const BIZ_NAMES = Object.keys(BIZ);
+
+const $ = s => document.querySelector(s), $$ = s => Array.from(document.querySelectorAll(s));
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const money = n => '$' + Math.round(n || 0).toLocaleString('en-AU');
+const k$ = n => Math.abs(n) >= 1e6 ? '$' + (n / 1e6).toFixed(2) + 'm' : Math.abs(n) >= 1000 ? '$' + (n / 1000).toFixed(Math.abs(n) >= 100000 ? 0 : 1) + 'k' : money(n);
+const ym = d => d.slice(0, 7);
+function addM(m, n) { const [y, mo] = m.split('-').map(Number); const d = new Date(y, mo - 1 + n, 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+function mShort(m) { const [y, mo] = m.split('-').map(Number); return new Date(y, mo - 1, 1).toLocaleDateString('en-AU', { month: 'short' }) + (mo === 1 || mo === 7 ? ' ' + String(y).slice(2) : ''); }
+function mLong(m) { const [y, mo] = m.split('-').map(Number); return new Date(y, mo - 1, 1).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' }); }
+function dShort(d) { const [y, m, dd] = d.split('-').map(Number); return new Date(y, m - 1, dd).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }); }
+
+let D = DATA;
+const TODAY = () => D.today;
+const NOW = () => ym(D.today);
+function fyOf(m) { const [y, mo] = m.split('-').map(Number); return mo >= 7 ? y : y - 1; } // FY starting July of y
+function periods() {
+  const now = NOW(), fy = fyOf(now);
+  const fyName = y => `FY ${String(y).slice(2)}/${String(y + 1).slice(2)}`;
+  return [
+    { k: 'fy', name: `This financial year (${fyName(fy)})`, from: `${fy}-07`, to: `${fy + 1}-06` },
+    { k: 'nfy', name: `Next financial year (${fyName(fy + 1)})`, from: `${fy + 1}-07`, to: `${fy + 2}-06` },
+    { k: 'lfy', name: `Last financial year (${fyName(fy - 1)})`, from: `${fy - 1}-07`, to: `${fy}-06` },
+    { k: 'n12', name: 'Next 12 months', from: now, to: addM(now, 11) },
+    { k: 'l12', name: 'Last 12 months', from: addM(now, -11), to: now },
+    { k: 'cy', name: `Calendar ${now.slice(0, 4)}`, from: `${now.slice(0, 4)}-01`, to: `${now.slice(0, 4)}-12` },
+    { k: 'cy1', name: `Calendar ${Number(now.slice(0, 4)) + 1}`, from: `${Number(now.slice(0, 4)) + 1}-01`, to: `${Number(now.slice(0, 4)) + 1}-12` },
+    { k: 'all', name: 'Everything in the register', from: '2000-01', to: '2099-12' },
+    { k: 'custom', name: 'Custom…' },
+  ];
+}
+
+const F = { rules: false, leftBy: 'work', matForm: null, biz: 'Both', period: 'fy', from: '', to: '', cats: [], sites: [], statuses: [], q: '', panel: false, colourBy: 'biz', showJobs: innerWidth < 600 ? 25 : 60, animated: false };
+try { Object.assign(F, JSON.parse(localStorage.getItem('hq_f') || '{}'), { panel: false, showJobs: innerWidth < 600 ? 25 : 60, animated: false }); } catch (e) {}
+const saveF = () => { try { localStorage.setItem('hq_f', JSON.stringify({ biz: F.biz, period: F.period, from: F.from, to: F.to, cats: F.cats, sites: F.sites, statuses: F.statuses, colourBy: F.colourBy })); } catch (e) {} };
+
+function range() {
+  const p = periods().find(x => x.k === F.period) || periods()[0];
+  if (p.k === 'custom') return { from: F.from || addM(NOW(), -6), to: F.to || addM(NOW(), 5), name: 'Custom' };
+  return p;
+}
+function filtered(opts) {
+  opts = opts || {};
+  return D.jobs.filter(j => j.stage !== 'lost' && j.price > 0
+    && (F.biz === 'Both' || j.business === F.biz)
+    && (!F.cats.length || F.cats.includes(j.category))
+    && (!F.sites.length || F.sites.includes(j.site))
+    && (!F.statuses.length || F.statuses.includes(j.stage))
+    && (opts.noRange || (j.month >= range().from && j.month <= range().to)));
+}
+// when the money lands: paid jobs use the payment batch month if we have it; everything else end of month + 45 days
+const pbByRef = {};
+function cashMonth(j) {
+  if (j.stage === 'paid') { const p = pbByRef[j.ref]; return p ? p.month : ym(j.due); }
+  return ym(j.due);
+}
+
+/* ---------- filters bar ---------- */
+function renderFilters() {
+  const r = range();
+  const cats = [...new Set(D.jobs.map(j => j.category))].sort();
+  const sites = [...new Set(D.jobs.map(j => j.site))].sort();
+  const n = F.cats.length + F.sites.length + F.statuses.length;
+  $('#filters').innerHTML = `
+    <div class="seg" role="tablist" aria-label="Business">${['Both', ...BIZ_NAMES].map(b => `<button class="${F.biz === b ? 'on' : ''} b-${b}" data-biz="${b}">${b === 'Both' ? 'Combined' : b}</button>`).join('')}</div>
+    <select class="period" id="period" aria-label="Period">${periods().map(p => `<option value="${p.k}" ${p.k === F.period ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
+    <button class="morebtn" id="more">Filters${n ? `<b>${n}</b>` : ''}</button>
+    <div class="fpanel ${F.panel ? 'on' : ''}">
+      ${F.period === 'custom' ? `<div class="fgroup"><h4>Custom range</h4><div class="custom"><input type="month" id="from" value="${r.from}"> to <input type="month" id="to" value="${r.to}"></div></div>` : ''}
+      <div class="fgroup"><h4>Job type</h4><div class="chips">${cats.map(c => `<button class="chip ${F.cats.includes(c) ? 'on' : ''}" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}</div></div>
+      <div class="fgroup"><h4>Site</h4><div class="chips">${sites.map(c => `<button class="chip ${F.sites.includes(c) ? 'on' : ''}" data-site="${esc(c)}">${esc(c === 'Unassigned' ? 'Not set yet' : c)}</button>`).join('')}</div></div>
+      <div class="fgroup"><h4>Status</h4><div class="chips">${STATUS_GROUPS.map(([k, l]) => `<button class="chip ${F.statuses.includes(k) ? 'on' : ''}" data-stat="${k}">${l}</button>`).join('')}</div></div>
+      ${n ? '<button class="reset" id="reset">Clear filters</button>' : ''}
+    </div>`;
+  $$('[data-biz]').forEach(b => b.onclick = () => { F.biz = b.dataset.biz; F.animated = false; go(); });
+  $('#period').onchange = e => { F.period = e.target.value; if (F.period === 'custom') F.panel = true; F.animated = false; go(); };
+  $('#more').onclick = () => { F.panel = !F.panel; renderFilters(); };
+  const tog = (arr, v) => arr.includes(v) ? arr.filter(x => x !== v) : arr.concat(v);
+  $$('[data-cat]').forEach(b => b.onclick = () => { F.cats = tog(F.cats, b.dataset.cat); go(); });
+  $$('[data-site]').forEach(b => b.onclick = () => { F.sites = tog(F.sites, b.dataset.site); go(); });
+  $$('[data-stat]').forEach(b => b.onclick = () => { F.statuses = tog(F.statuses, b.dataset.stat); go(); });
+  const rs = $('#reset'); if (rs) rs.onclick = () => { F.cats = []; F.sites = []; F.statuses = []; go(); };
+  const fr = $('#from'), to = $('#to');
+  if (fr) fr.onchange = () => { F.from = fr.value; go(); };
+  if (to) to.onchange = () => { F.to = to.value; go(); };
+}
+
+/* ---------- hero ---------- */
+function sumBy(list, fn) { const o = {}; list.forEach(j => { const k = fn(j); o[k] = (o[k] || 0) + j.price; }); return o; }
+function renderHero(list) {
+  const r = range();
+  const s = sumBy(list, stageOf);
+  const total = list.reduce((t, j) => t + j.price, 0);
+  const earned = (s.paid || 0) + (s.invoiced || 0);
+  const cashIn = D.cash.filter(c => c.month >= r.from && c.month <= r.to && c.month <= NOW() && inScopeRef(c.ref)).reduce((t, c) => t + c.net, 0);
+  const pct = v => total ? (v / total * 100) : 0;
+  const who = F.biz === 'Both' ? 'Veridian + Frontline + Pulse' : F.biz;
+  return `<section class="hero">
+    <p class="hero-k">${esc(who)} · ${esc(r.k === 'custom' ? mShort(r.from) + ' to ' + mShort(r.to) : periods().find(p => p.k === r.k).name)}</p>
+    <div class="hero-grid">
+      <div><div class="hero-big" data-count="${total}">${k$(total)}</div><p>expected income, ex GST</p></div>
+      <div class="hero-s"><strong data-count="${earned}">${k$(earned)}</strong><p>invoiced or paid (${Math.round(pct(earned))}%)</p></div>
+      <div class="hero-s"><strong data-count="${cashIn}">${k$(cashIn)}</strong><p>cash received after project management</p></div>
+    </div>
+    <div class="progress"><div class="pbar">${STAGES.map(st => `<span class="s-${st.k === 'invoiced' ? 'inv' : st.k === 'approved' ? 'appr' : st.k}" style="width:${pct(s[st.k] || 0)}%"></span>`).join('')}</div>
+      <div class="pkey">${STAGES.map(st => `<span><i class="s-${st.k === 'invoiced' ? 'inv' : st.k === 'approved' ? 'appr' : st.k}" style="background:${st.k === 'paid' ? '#fff' : st.k === 'invoiced' ? '#a9bdd1' : st.k === 'done' ? '#6f8aa7' : st.k === 'approved' ? '#4c6584' : ''}${st.k === 'pipe' ? ';background:repeating-linear-gradient(135deg,#6f8aa7 0 3px,#33496a 3px 6px)' : ''}"></i>${esc(st.short || st.name)} <b>${k$(s[st.k] || 0)}</b></span>`).join('')}</div></div>
+  </section>`;
+}
+function inScopeRef(ref) {
+  const j = D.jobs.find(x => x.ref === ref);
+  if (!j) return F.biz === 'Both' && !F.cats.length && !F.sites.length && !F.statuses.length;
+  return (F.biz === 'Both' || j.business === F.biz) && (!F.cats.length || F.cats.includes(j.category)) && (!F.sites.length || F.sites.includes(j.site)) && (!F.statuses.length || F.statuses.includes(j.stage));
+}
+
+/* ---------- KPIs ---------- */
+function renderKpis(list) {
+  const s = sumBy(list, stageOf), c = {};
+  list.forEach(j => { const k = stageOf(j); c[k] = (c[k] || 0) + 1; });
+  const late = filtered({ noRange: true }).filter(j => j.stage === 'invoiced' && j.due < TODAY());
+  const lateV = late.reduce((t, j) => t + j.price, 0);
+  const cell = (st, note, extra) => `<div class="kpi"><span class="l"><i style="background:${st.hatch ? 'repeating-linear-gradient(135deg,#b8c4cf 0 3px,#eef1f4 3px 6px)' : st.hex}"></i>${esc(st.short || st.name)}</span><span class="v">${money(s[st.k] || 0)}</span><span class="n ${extra ? 'bad' : ''}">${note}</span></div>`;
+  return `<div class="kpis">
+    ${cell(STAGES[0], `${c.paid || 0} jobs`)}
+    ${cell(STAGES[1], lateV ? `${money(lateV)} overdue (${late.length})` : `${c.invoiced || 0} jobs, none overdue`, lateV)}
+    ${cell(STAGES[2], `${c.done || 0} jobs ready to invoice`)}
+    ${cell(STAGES[3], `${c.approved || 0} jobs with a WO`)}
+    ${cell(STAGES[4], `${c.pipe || 0} quoted, RFQ or planned`)}
+  </div>`;
+}
+
+/* ---------- month chart (income by work month, or cash by payment month) ---------- */
+function monthsIn(r) {
+  const out = []; let m = r.from === '2000-01' ? D.jobs.reduce((a, j) => j.month < a ? j.month : a, '9999') : r.from;
+  const end = r.to === '2099-12' ? D.jobs.reduce((a, j) => j.month > a ? j.month : a, '0000') : r.to;
+  for (let i = 0; m <= end && i < 48; i++, m = addM(m, 1)) out.push(m);
+  return out;
+}
+function barChart(id, months, cols, opts) {
+  // cols: per month { m, parts: [{k, v, color, hatch, label}], total }
+  const W = Math.max(680, months.length * 58), H = 300, pl = 54, pb = 40, pt = 22;
+  const max0 = Math.max(1, ...cols.map(c => c.total), opts.target || 0);
+  const step = [1000, 2500, 5000, 10000, 20000, 25000, 50000, 100000, 200000].find(v => max0 * 1.1 / v <= 5) || 250000;
+  const max = Math.ceil(max0 * 1.1 / step) * step;
+  const y = v => pt + (H - pt - pb) * (1 - v / max);
+  const cw = (W - pl - 6) / months.length, bw = Math.min(40, cw * 0.66);
+  const ticks = []; for (let t = 0; t <= max; t += step) ticks.push(t);
+  const ni = months.indexOf(NOW());
+  return `<div class="chart" id="${id}"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label)}">
+    <defs><pattern id="hatch-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#eef1f4"/><rect width="2.6" height="6" fill="#aab7c3"/></pattern>
+      <pattern id="hatchF-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#fde3d8"/><rect width="2.6" height="6" fill="#e8572a"/></pattern>
+      <pattern id="hatchV-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#dcefe8"/><rect width="2.6" height="6" fill="#2e7d64"/></pattern>
+      <pattern id="hatchP-${id}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#dde9f8"/><rect width="2.6" height="6" fill="#0a62c4"/></pattern></defs>
+    ${ticks.map(t => `<line class="grid" x1="${pl}" x2="${W}" y1="${y(t)}" y2="${y(t)}"/><text class="ax" x="${pl - 8}" y="${y(t) + 4}" text-anchor="end">${t ? k$(t) : '0'}</text>`).join('')}
+    ${cols.map((c, i) => {
+      const x = pl + i * cw + (cw - bw) / 2; let acc = 0;
+      const rects = c.parts.filter(p => p.v > 0).map(p => {
+        const y1 = y(acc + p.v), y0 = y(acc); acc += p.v;
+        const fill = p.hatch ? `url(#${p.hatch}-${id})` : p.color;
+        return `<rect class="grow" x="${x}" y="${y1}" width="${bw}" height="${Math.max(0, y0 - y1)}" fill="${fill}"/>`;
+      }).join('');
+      const tip = [mLong(c.m)].concat(c.parts.filter(p => p.v > 0).map(p => `${p.tipColor || p.color}~${p.label}~${money(p.v)}`)).concat(c.total ? [`~Total~${money(c.total)}`] : ['~Nothing in this month~']).join('|');
+      return `<g class="col" style="--i:${i}" data-tip="${esc(tip)}"><rect class="hit" x="${pl + i * cw}" y="${pt}" width="${cw}" height="${H - pt - pb}"/>${rects}
+        ${c.total ? `<text class="tot" x="${x + bw / 2}" y="${y(c.total) - 6}" text-anchor="middle">${k$(c.total)}</text>` : ''}
+        <text class="ax ${c.m === NOW() ? 'now' : ''}" x="${x + bw / 2}" y="${H - 16}" text-anchor="middle">${mShort(c.m)}</text></g>`;
+    }).join('')}
+    ${ni >= 0 ? `<line class="today" x1="${pl + ni * cw + 2}" x2="${pl + ni * cw + 2}" y1="${pt - 6}" y2="${H - pb}"/><text class="todayl" x="${pl + ni * cw - 4}" y="${pt + 2}" text-anchor="end">Today</text>` : ''}
+  </svg></div>`;
+}
+function stageParts(list) {
+  const s = sumBy(list, stageOf);
+  return STAGES.map(st => ({ k: st.k, v: s[st.k] || 0, color: st.hex, hatch: st.hatch ? 'hatch' : '', label: st.short || st.name }));
+}
+function bizParts(list) {
+  const out = [];
+  BIZ_NAMES.forEach(b => {
+    const l = list.filter(j => j.business === b);
+    const firm = l.filter(j => stageOf(j) !== 'pipe').reduce((t, j) => t + j.price, 0);
+    const pipe = l.filter(j => stageOf(j) === 'pipe').reduce((t, j) => t + j.price, 0);
+    out.push({ v: firm, color: BIZ[b].color, label: b + ', confirmed' }, { v: pipe, color: BIZ[b].color, hatch: { Veridian: 'hatchV', Frontline: 'hatchF', Pulse: 'hatchP' }[b], label: b + ', pipeline', tipColor: BIZ[b].color });
+  });
+  return out;
+}
+function renderIncome(list) {
+  const months = monthsIn(range());
+  const byStage = F.colourBy === 'stage' || F.biz !== 'Both';
+  const cols = months.map(m => { const l = list.filter(j => j.month === m); return { m, parts: byStage ? stageParts(l) : bizParts(l), total: l.reduce((t, j) => t + j.price, 0) }; });
+  const past = cols.filter(c => c.m < NOW());
+  const avg = past.length ? past.reduce((t, c) => t + c.total, 0) / past.length : 0;
+  const key = byStage ? STAGES.map(st => `<span><i class="${st.hatch ? 'hatch' : ''}" style="${st.hatch ? '' : 'background:' + st.hex}"></i>${esc(st.name)}</span>`).join('')
+    : BIZ_NAMES.map(b => `<span><i style="background:${BIZ[b].color}"></i>${b}</span><span><i style="background:repeating-linear-gradient(135deg,${BIZ[b].color} 0 3px,${BIZ[b].light} 3px 6px)"></i>${b} pipeline</span>`).join('');
+  return `<section class="panel"><div class="p-head"><div><h3>Income by month</h3><p>Expected for each work month, and how much of it is real money yet${avg ? ` · ${k$(avg)} a month on average so far` : ''}</p></div>
+    ${F.biz === 'Both' ? `<div class="p-tools"><div class="seg">${[['stage', 'By status'], ['biz', 'By business']].map(([k, l]) => `<button class="${F.colourBy === k ? 'on' : ''}" data-colour="${k}">${l}</button>`).join('')}</div></div>` : ''}</div>
+    ${barChart('inc', months, cols, { label: 'Expected and actual income by month' })}
+    <div class="key">${key}</div></section>`;
+}
+function renderCash(list) {
+  const months = monthsIn(range());
+  const all = filtered({ noRange: true });
+  const cols = months.map(m => {
+    const l = all.filter(j => cashMonth(j) === m);
+    const rec = l.filter(j => j.stage === 'paid').reduce((t, j) => t + (pbByRef[j.ref] ? pbByRef[j.ref].net : j.price), 0);
+    const late = l.filter(j => j.stage === 'invoiced' && j.due < TODAY()).reduce((t, j) => t + j.price, 0);
+    const due = l.filter(j => j.stage === 'invoiced' && j.due >= TODAY()).reduce((t, j) => t + j.price, 0);
+    const fc = l.filter(j => j.stage === 'done' || j.stage === 'approved').reduce((t, j) => t + j.price, 0);
+    const pipe = l.filter(j => PIPE.includes(j.stage)).reduce((t, j) => t + j.price, 0);
+    const parts = [
+      { v: rec, color: '#21334a', label: 'Received' },
+      { v: late, color: '#c62828', label: 'Overdue' },
+      { v: due, color: '#4b6a8c', label: 'Invoiced, due' },
+      { v: fc, color: '#8fa6bf', label: 'Work done or approved' },
+      { v: pipe, color: '#aab7c3', hatch: 'hatch', label: 'Pipeline' },
+    ];
+    return { m, parts, total: parts.reduce((t, p) => t + p.v, 0) };
+  });
+  const next3 = cols.filter(c => c.m >= NOW() && c.m <= addM(NOW(), 2)).reduce((t, c) => t + c.total - (c.parts[4].v), 0);
+  return `<section class="panel"><div class="p-head"><div><h3>Cash flow</h3><p>When the money lands: end of the invoice month + ${D.payDays} days. Not invoiced yet is forecast from the end of its work month.</p></div>
+    <p><b>${k$(next3)}</b> confirmed to land in the next 3 months</p></div>
+    ${barChart('cash', months, cols, { label: 'Cash expected by month' })}
+    <div class="key"><span><i style="background:#21334a"></i>Received (after project management)</span><span><i style="background:#c62828"></i>Overdue</span><span><i style="background:#4b6a8c"></i>Invoiced, due</span><span><i style="background:#8fa6bf"></i>Done or approved, forecast</span><span><i class="hatch"></i>Pipeline, forecast</span></div></section>`;
+}
+
+/* ---------- what's left for Jeff and Dan ---------- */
+function rulesOf() {
+  const R = D.rules || {};
+  const MAT = { 'Passive fire': 15, 'Air filters': 25, 'Water filters': 25, 'SIT': 30, 'Fire repairs': 15, 'Mechanical repairs': 15, 'Inspections and reports': 5, 'Kitchen': 15, 'Projects': 15 };
+  return { oh: 0, pb: R.pb != null ? R.pb : 10, flat: R.flat || { 'IoT sensors': 6000 }, mat: Object.assign({}, MAT, R.mat || {}), notes: R.notes || {}, split: R.split || [{ name: 'Jeff', pct: 50 }, { name: 'Dan', pct: 50 }] };
+}
+const CONFIRMED = j => stageOf(j) !== 'pipe';
+function matItems() { return ((D.materials && D.materials.items) || []).filter(m => m.status !== 'Ignore'); }
+function matByRef() { const o = {}; matItems().forEach(m => { if (m.ref) o[m.ref] = (o[m.ref] || 0) + m.amount; }); return o; }
+// one job, before splitting: gross, project management (10%, or the actual PB), materials (real or estimated), what's left
+function jobMoney(j, mref) {
+  const R = rulesOf(), g = j.price;
+  const pbActual = pbByRef[j.ref];
+  const pb = pbActual ? pbActual.deduction : g * R.pb / 100; // project management (PB)
+  const oh = 0;
+  const real = mref[j.ref];
+  const mat = real != null ? real : g * (R.mat[j.category] != null ? R.mat[j.category] : 15) / 100;
+  return { g, pb, oh, mat, est: real == null, left: g - pb - oh - mat };
+}
+// a set of jobs that belong to ONE month (work month or cash month)
+function monthLeft(l, extraMat) {
+  const R = rulesOf(), mref = matByRef();
+  const o = { g: 0, pb: 0, oh: 0, mat: extraMat || 0, est: 0, left: -(extraMat || 0), firm: -(extraMat || 0), pipe: 0, biz: {} };
+  BIZ_NAMES.forEach(b => o.biz[b] = { firm: 0, pipe: 0 });
+  l.forEach(j => {
+    if (R.flat[j.category] != null) { o.g += j.price; return; }
+    const m = jobMoney(j, mref), k = CONFIRMED(j) ? 'firm' : 'pipe';
+    o.g += m.g; o.pb += m.pb; o.oh += m.oh; o.mat += m.mat; o.left += m.left; o[k] += m.left; o.biz[j.business][k] += m.left;
+    if (m.est) o.est += m.mat;
+  });
+  Object.keys(R.flat).forEach(cat => {
+    const jj = l.filter(j => j.category === cat);
+    if (!jj.length) return;
+    const k = jj.some(CONFIRMED) ? 'firm' : 'pipe', amt = Number(R.flat[cat]) || 0;
+    o.left += amt; o[k] += amt; o.biz[jj[0].business][k] += amt;
+  });
+  o.biz.Veridian.firm += -(extraMat || 0);
+  return o;
+}
+function renderProfit(list) {
+  const R = rulesOf(), months = monthsIn(range()), cash = F.leftBy === 'cash';
+  const all = filtered({ noRange: true }), refs = new Set(D.jobs.map(j => j.ref));
+  const loose = matItems().filter(m => !m.ref || !refs.has(m.ref));
+  const rows = months.map(m => {
+    const l = cash ? all.filter(j => cashMonth(j) === m) : list.filter(j => j.month === m);
+    const extra = F.biz === 'Both' || F.biz === 'Veridian' ? loose.filter(x => (x.date || '').slice(0, 7) === m).reduce((t, x) => t + x.amount, 0) : 0;
+    return Object.assign({ m }, monthLeft(l, extra));
+  });
+  const T = rows.reduce((a, r) => { ['g', 'pb', 'oh', 'mat', 'est', 'left', 'firm', 'pipe'].forEach(k => a[k] += r[k]); return a; }, { g: 0, pb: 0, oh: 0, mat: 0, est: 0, left: 0, firm: 0, pipe: 0 });
+  const ahead = rows.filter(r => r.m >= NOW()).reduce((t, r) => t + r.left, 0);
+  const sp = R.split, share = (v, p) => v * (p.pct || 0) / 100;
+  const cols = rows.map(r => ({ m: r.m, total: Math.max(0, r.left), parts: BIZ_NAMES.map(b => [{ v: Math.max(0, r.biz[b].firm), color: BIZ[b].color, label: b + ', confirmed' }, { v: Math.max(0, r.biz[b].pipe), color: BIZ[b].color, hatch: { Veridian: 'hatchV', Frontline: 'hatchF', Pulse: 'hatchP' }[b], tipColor: BIZ[b].color, label: b + ', pipeline' }]).flat() }));
+  const cats = [...new Set(D.jobs.map(j => j.category))].sort();
+  return `<section class="panel" id="profit"><div class="p-head"><div><h3>Left for ${sp.map(p => esc(p.name)).join(' and ')}</h3>
+      <p>Income minus ${R.pb}% project management and materials, then split ${sp.map(p => `${p.pct}%`).join(' / ')}. Sensors are a flat ${money(R.flat['IoT sensors'] || 0)} a month.</p></div>
+      <div class="p-tools"><div class="seg">${[['work', 'By work month'], ['cash', 'When cash lands']].map(([k, l]) => `<button class="${(F.leftBy || 'work') === k ? 'on' : ''}" data-leftby="${k}">${l}</button>`).join('')}</div><button class="morebtn" id="rulesBtn">Rules</button></div></div>
+    <div class="rules ${F.rules ? 'on' : ''}">
+      <h4>Taken off every job (not sensors)</h4><div class="rules-grid">
+        <div class="rule"><label>Project management<small>% of the invoice; the payment batch figure is used once known</small></label><div class="inp"><input inputmode="decimal" id="r_pb" value="${R.pb}">%</div></div></div>
+      <h4>Materials estimate, until real supplier costs are entered</h4><div class="rules-grid">${cats.filter(c => R.flat[c] == null).map(c => `<div class="rule"><label>${esc(c)}${R.notes[c] ? `<small>${esc(R.notes[c])}</small>` : ''}</label><div class="inp"><input inputmode="decimal" data-rmat="${esc(c)}" value="${R.mat[c] != null ? R.mat[c] : 15}">%</div></div>`).join('')}</div>
+      <h4>Flat per month (recurring contracts)</h4><div class="rules-grid">${Object.keys(R.flat).map(c => `<div class="rule"><label>${esc(c)}<small>${esc(R.notes[c] || 'left to split each month')}</small></label><div class="inp">$<input inputmode="decimal" data-rflat="${esc(c)}" value="${R.flat[c]}"></div></div>`).join('')}</div>
+      <h4>Split</h4><div class="rules-grid">${sp.map((p, i) => `<div class="rule"><label>${esc(p.name)}</label><div class="inp"><input inputmode="decimal" data-rsplit="${i}" value="${p.pct}">%</div></div>`).join('')}</div>
+      <button class="save" id="rulesSave">Save rules</button>
+    </div>
+    <div class="pstats">
+      <div class="pstat main"><span>Left to split</span><strong data-count="${T.left}">${k$(T.left)}</strong><em>${k$(T.firm)} from confirmed work · ${k$(ahead)} from ${mShort(NOW())} on</em></div>
+      ${sp.map(p => `<div class="pstat"><span>${esc(p.name)}${cash ? ' in the bank' : ''}</span><strong>${k$(share(T.left, p))}</strong><em>${k$(share(T.firm, p))} confirmed</em></div>`).join('')}
+    </div>
+    ${barChart('prof', months, cols, { label: 'Left to split by month' })}
+    <div class="key">${BIZ_NAMES.map(b => `<span><i style="background:${BIZ[b].color}"></i>${b}</span>`).join('')}<span><i class="hatch"></i>Striped is pipeline</span>${T.est ? `<span><b class="estdot">est</b>${money(T.est)} of materials is still an estimate</span>` : ''}</div>
+    <div class="tablewrap"><table class="pt"><thead><tr><th>Month</th><th class="hide-s">Income</th><th class="hide-s">Project mgmt</th><th class="hide-s">Materials</th><th>Left</th>${sp.map(p => `<th>${esc(p.name)}</th>`).join('')}</tr></thead><tbody>
+      ${rows.map(r => `<tr class="${r.m < NOW() ? 'past' : r.m === NOW() ? 'now' : ''}"><td>${mLong(r.m)}</td><td class="hide-s">${money(r.g)}</td><td class="hide-s">−${money(r.pb)}</td><td class="hide-s">−${money(r.mat)}${r.est > 0.5 ? ' <b class="estdot" title="Includes estimated materials">est</b>' : ''}</td><td class="p">${money(r.left)}</td>${sp.map(p => `<td>${money(share(r.left, p))}</td>`).join('')}</tr>`).join('')}
+    </tbody><tfoot><tr><td>Total</td><td class="hide-s">${money(T.g)}</td><td class="hide-s">−${money(T.pb)}</td><td class="hide-s">−${money(T.mat)}</td><td>${money(T.left)}</td>${sp.map(p => `<td>${money(share(T.left, p))}</td>`).join('')}</tr></tfoot></table></div>
+  </section>`;
+}
+function bindProfit() {
+  $$('[data-leftby]').forEach(b => b.onclick = () => { F.leftBy = b.dataset.leftby; F.animated = true; go(); });
+  const b = $('#rulesBtn'); if (b) b.onclick = () => { F.rules = !F.rules; $('.rules').classList.toggle('on', F.rules); };
+  const s = $('#rulesSave'); if (!s) return;
+  s.onclick = () => {
+    const R = JSON.parse(JSON.stringify(rulesOf()));
+    R.oh = 0; R.pb = Number($('#r_pb').value) || 0;
+    $$('[data-rmat]').forEach(i => R.mat[i.dataset.rmat] = Number(i.value) || 0);
+    $$('[data-rflat]').forEach(i => R.flat[i.dataset.rflat] = Number(i.value) || 0);
+    $$('[data-rsplit]').forEach(i => R.split[Number(i.dataset.rsplit)].pct = Number(i.value) || 0);
+    serverCall('saveRules', R, r => { D.rules = r; F.rules = false; F.animated = true; go(); const p = $('#profit'); if (p) p.scrollIntoView({ block: 'start' }); }, s, 'Saving…');
+  };
+}
+function serverCall(fn, arg, ok, btn, busy) {
+  if (window.google && google.script && google.script.run) {
+    const label = btn ? btn.textContent : '';
+    if (btn) { btn.textContent = busy || 'Working…'; btn.disabled = true; }
+    google.script.run.withSuccessHandler(r => { if (btn) { btn.textContent = label; btn.disabled = false; } ok(r); })
+      .withFailureHandler(e => { if (btn) { btn.textContent = label; btn.disabled = false; } alert('That didn\'t work: ' + (e && e.message || e)); })[fn](arg);
+  } else ok(fn === 'saveRules' ? arg : localMat(fn, arg));
+}
+function localMat(fn, arg) { // offline preview only
+  const M = D.materials || { items: [] };
+  if (fn === 'addMaterial') arg.lines.forEach(l => M.items.push({ row: M.items.length + 2, date: arg.date, ref: l.ref, supplier: arg.supplier, amount: Number(l.amount), status: 'OK', file: '' }));
+  if (fn === 'updateMaterial') { const it = M.items.find(x => x.row === arg.row); Object.assign(it, arg, { status: arg.status || 'OK' }); }
+  return M;
+}
+
+/* ---------- materials and supplier invoices ---------- */
+function jobOptions(sel) {
+  const from = addM(NOW(), -9);
+  const js = D.jobs.filter(j => j.ref && j.month >= from && j.stage !== 'lost' && j.business !== 'Pulse' && !/^recurring$/i.test(j.ref)).sort((a, b) => b.month.localeCompare(a.month));
+  const seen = new Set();
+  return `<option value="">Pick the job…</option>` + js.filter(j => !seen.has(j.ref) && seen.add(j.ref)).map(j => `<option value="${esc(j.ref)}" ${j.ref === sel ? 'selected' : ''}>${esc(j.ref)} · ${esc((j.loc || j.job).slice(0, 34))} · ${mShort(j.month)}</option>`).join('') + `<option value="" ${sel === '__none' ? 'selected' : ''}>General (no job)</option>`;
+}
+function renderMaterials() {
+  if (!D.materials) return '';
+  const M = D.materials;
+  const check = M.items.filter(m => m.status === 'Check');
+  const recent = M.items.filter(m => m.status === 'OK').slice(-8).reverse();
+  const f = F.matForm;
+  return `<section class="panel" id="materials"><div class="p-head"><div><h3>Materials and supplier invoices</h3><p>Real costs replace the estimate for that job. Drop supplier invoices in the folder and they show up here to check.</p></div>
+      <div class="p-tools">${M.folderUrl ? `<a class="morebtn" href="${esc(M.folderUrl)}" target="_blank" rel="noopener">Invoice folder</a>` : ''}${M.sheetUrl ? `<a class="morebtn" href="${esc(M.sheetUrl)}" target="_blank" rel="noopener">Sheet</a>` : ''}<button class="save" id="matAdd">Add material</button></div></div>
+    ${M.error ? `<p class="bad">${esc(M.error)}</p>` : ''}
+    ${f ? `<div class="matform">
+      <div class="mf-row"><label>Supplier<input id="mf_sup" value="${esc(f.supplier || '')}" placeholder="Bunnings, Tradelink…"></label><label>Date<input id="mf_date" type="date" value="${esc(f.date)}"></label></div>
+      ${f.lines.map((l, i) => `<div class="mf-row"><label>Job<select data-mfref="${i}">${jobOptions(l.ref)}</select></label><label>Amount ex GST<input data-mfamt="${i}" inputmode="decimal" value="${esc(l.amount)}" placeholder="0.00"></label></div>`).join('')}
+      <button class="linkbtn" id="mf_more">+ Split across another job</button>
+      <div class="mf-row"><label>Receipt or invoice<input id="mf_file" type="file" accept="image/*,application/pdf"></label><label>Notes<input id="mf_notes" value="${esc(f.notes || '')}"></label></div>
+      <div class="mf-actions"><button class="save" id="mf_save">Save</button><button class="linkbtn" id="mf_cancel">Cancel</button></div></div>` : ''}
+    ${check.length ? `<h4 class="sub">To check · ${check.length}</h4><div class="mlist">${check.map(m => `<div class="mrow check" data-row="${m.row}">
+        <div class="m-what"><b>${esc(m.supplier || 'Supplier invoice')}</b><span>${m.date ? dShort(m.date) : ''}${m.file ? ` · <a href="${esc(m.file)}" target="_blank" rel="noopener">Open invoice</a>` : ''}</span></div>
+        <select data-cref="${m.row}">${jobOptions(m.ref)}</select>
+        <input data-camt="${m.row}" inputmode="decimal" value="${m.amount || ''}" placeholder="ex GST">
+        <button class="save small" data-cok="${m.row}">OK</button><button class="linkbtn" data-cig="${m.row}">Ignore</button></div>`).join('')}</div>` : ''}
+    <h4 class="sub">Recent</h4>${recent.length ? `<div class="mlist">${recent.map(m => `<div class="mrow"><div class="m-what"><b>${esc(m.supplier || '—')}</b><span>${m.date ? dShort(m.date) : ''} · ${esc(m.ref || 'General')}${m.file ? ` · <a href="${esc(m.file)}" target="_blank" rel="noopener">Receipt</a>` : ''}</span></div><div class="m-amt">${money(m.amount)}</div></div>`).join('')}</div>` : '<p class="empty">No supplier costs yet. Until there are, materials use the estimates in Rules.</p>'}
+  </section>`;
+}
+function bindMaterials() {
+  const done = M => { D.materials = M; F.matForm = null; F.animated = true; go(); const p = $('#materials'); if (p) p.scrollIntoView({ block: 'start' }); };
+  const add = $('#matAdd'); if (add) add.onclick = () => { F.matForm = { supplier: '', date: D.today, notes: '', lines: [{ ref: '', amount: '' }] }; F.animated = true; go(); $('#materials').scrollIntoView({ block: 'start' }); };
+  const read = () => { const f = F.matForm; if (!f) return; f.supplier = $('#mf_sup').value.trim(); f.date = $('#mf_date').value; f.notes = $('#mf_notes').value; f.lines.forEach((l, i) => { l.ref = $(`[data-mfref="${i}"]`).value; l.amount = $(`[data-mfamt="${i}"]`).value; }); };
+  const more = $('#mf_more'); if (more) more.onclick = () => { read(); F.matForm.lines.push({ ref: '', amount: '' }); F.animated = true; go(); $('#materials').scrollIntoView({ block: 'start' }); };
+  const cancel = $('#mf_cancel'); if (cancel) cancel.onclick = () => { F.matForm = null; F.animated = true; go(); };
+  const save = $('#mf_save');
+  if (save) save.onclick = async () => {
+    read();
+    const f = F.matForm, file = $('#mf_file').files[0];
+    if (!f.lines.some(l => Number(l.amount) > 0)) { alert('Enter an amount'); return; }
+    const payload = { supplier: f.supplier, date: f.date, notes: f.notes, lines: f.lines };
+    if (file) payload.file = await shrink(file);
+    serverCall('addMaterial', payload, done, save, 'Saving…');
+  };
+  $$('[data-cok]').forEach(b => b.onclick = () => { const r = Number(b.dataset.cok); serverCall('updateMaterial', { row: r, ref: $(`[data-cref="${r}"]`).value, amount: $(`[data-camt="${r}"]`).value, status: 'OK' }, done, b, '…'); });
+  $$('[data-cig]').forEach(b => b.onclick = () => { const r = Number(b.dataset.cig); serverCall('updateMaterial', { row: r, status: 'Ignore' }, done, b, '…'); });
+}
+// photos are shrunk to about 1600px before upload; PDFs go as they are
+function shrink(file) {
+  return new Promise((res, rej) => {
+    const rd = new FileReader();
+    rd.onerror = rej;
+    rd.onload = () => {
+      if (!/^image\//.test(file.type)) { res({ data: rd.result, type: file.type || 'application/pdf' }); return; }
+      const img = new Image();
+      img.onload = () => { const k = Math.min(1, 1600 / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); res({ data: c.toDataURL('image/jpeg', 0.82), type: 'image/jpeg' }); };
+      img.onerror = () => res({ data: rd.result, type: file.type });
+      img.src = rd.result;
+    };
+    rd.readAsDataURL(file);
+  });
+}
+
+/* ---------- business split, job type, site ---------- */
+function renderSplit(list) {
+  if (F.biz !== 'Both') return '';
+  const tot = list.reduce((t, j) => t + j.price, 0) || 1;
+  const rows = BIZ_NAMES.map(b => {
+    const l = list.filter(j => j.business === b), s = sumBy(l, stageOf), v = l.reduce((t, j) => t + j.price, 0);
+    return `<div class="split-row"><div class="split-name ${b}">${b}<span>${BIZ[b].note}</span></div>
+      <div class="sbar" style="width:${Math.max(4, v / tot * 100)}%">${STAGES.map(st => `<span class="${st.hatch ? 'hatch' : ''}" style="width:${v ? (s[st.k] || 0) / v * 100 : 0}%;${st.hatch ? '' : 'background:' + (st.k === 'paid' ? BIZ[b].color : st.hex)}"></span>`).join('')}</div>
+      <div class="split-v">${k$(v)}<span>${Math.round(v / tot * 100)}% of the total</span></div></div>`;
+  }).join('');
+  return `<section class="panel"><div class="p-head"><div><h3>Veridian, Frontline and Pulse</h3><p>Same period and filters. Each business's own colour is paid, then invoiced, done, approved and pipeline.</p></div></div><div class="split">${rows}</div></section>`;
+}
+function rankPanel(title, note, list, keyFn, filterKey, nameFn) {
+  const by = {};
+  list.forEach(j => { const k = keyFn(j); (by[k] = by[k] || { v: 0, n: 0, s: {}, b: j.business }); by[k].v += j.price; by[k].n++; by[k].s[stageOf(j)] = (by[k].s[stageOf(j)] || 0) + j.price; });
+  const rows = Object.entries(by).sort((a, b) => b[1].v - a[1].v).slice(0, 10);
+  const max = rows.length ? rows[0][1].v : 1;
+  return `<section class="panel"><div class="p-head"><div><h3>${title}</h3><p>${note}</p></div></div>
+    ${rows.length ? `<div class="rank">${rows.map(([k, o]) => `<div class="r-row" data-${filterKey}="${esc(k)}" title="Filter to ${esc(k)}"><div class="r-name">${esc(nameFn ? nameFn(k) : k)}<span>${o.n} job${o.n === 1 ? '' : 's'}</span></div>
+      <div class="r-bar" style="width:${Math.max(3, o.v / max * 100)}%">${STAGES.map(st => `<span class="${st.hatch ? 'hatch' : ''}" style="width:${(o.s[st.k] || 0) / o.v * 100}%;${st.hatch ? '' : 'background:' + st.hex}"></span>`).join('')}</div>
+      <div class="r-v">${k$(o.v)}</div></div>`).join('')}</div>` : '<p class="empty">Nothing matches these filters.</p>'}</section>`;
+}
+
+/* ---------- payments coming in ---------- */
+function renderPayments() {
+  const all = filtered({ noRange: true }).filter(j => j.stage === 'invoiced' || j.stage === 'done');
+  const list = all.sort((a, b) => a.due.localeCompare(b.due)).slice(0, 12);
+  return `<section class="panel"><div class="p-head"><div><h3>Money coming in</h3><p>Invoiced first, then done and ready to invoice. Due dates are end of month + ${D.payDays} days.</p></div></div>
+    ${list.length ? `<div class="pay">${list.map(j => { const late = j.stage === 'invoiced' && j.due < TODAY(); return `<div class="pay-row ${late ? 'late' : ''}">
+      <div class="pay-d">${dShort(j.due)}<span>${late ? 'overdue' : j.stage === 'invoiced' ? 'due' : 'if invoiced now'}</span></div>
+      <div class="pay-j"><b>${esc(j.ref || j.job)}</b><span class="tag ${j.business}">${j.business}</span>${late ? '<span class="tag late">Overdue</span>' : j.stage === 'done' ? '<span class="tag est">Not invoiced</span>' : ''}<div>${esc(j.loc || j.job)}</div></div>
+      <div class="pay-v">${money(j.price)}</div></div>`; }).join('')}</div>` : '<p class="empty">Nothing invoiced or waiting to be invoiced.</p>'}</section>`;
+}
+
+/* ---------- Frontline bank ---------- */
+function renderFrontline() {
+  if (F.biz === 'Veridian' || !D.frontline) return '';
+  const f = D.frontline;
+  return `<section class="panel fl"><div class="fl-logo"><img src="https://jeffbuilt.github.io/frontline-passive/logo-header.png" alt="Frontline"></div>
+    <div><div class="fl-nums"><div>${money(f.bank)}<span>passive fire in the bank, not on a PO yet (${f.bankN} penetrations)</span></div>
+      ${f.repairsOpen ? `<div>${money(f.repairsOpen)}<span>fire repairs quoted or approved</span></div>` : ''}
+      ${f.requested ? `<div>${f.requested}<span>client requests to price</span></div>` : ''}</div>
+      <p class="muted" style="margin:8px 0 0">Scouted in the Frontline app. It shows up above once it's planned into POs and added to the register. <a href="https://jeffbuilt.github.io/frontline-passive/" target="_blank" rel="noopener">Open Frontline</a></p></div></section>`;
+}
+
+/* ---------- jobs ---------- */
+function renderJobs(list) {
+  const q = F.q.trim().toLowerCase();
+  const l = list.filter(j => !q || [j.ref, j.wo, j.loc, j.job, j.status, j.contractor].some(v => String(v).toLowerCase().includes(q))).sort((a, b) => a.month.localeCompare(b.month) || b.price - a.price);
+  const shown = l.slice(0, F.showJobs);
+  const monthTot = {}; l.forEach(j => monthTot[j.month] = (monthTot[j.month] || 0) + j.price);
+  let lastM = '', rows = '';
+  shown.forEach(j => {
+    if (j.month !== lastM) { lastM = j.month; rows += `<tr class="mhead"><td colspan="4">${mLong(j.month)}</td><td class="hide-s"></td><td class="num">${money(monthTot[j.month])}</td></tr>`; }
+    rows += `<tr><td><b>${esc(j.ref)}</b><span class="tag ${j.business}">${BIZ[j.business].short}</span></td><td>${esc(j.loc || '—')}<div class="muted">${esc(j.job)}</div></td>
+      <td class="hide-s">${esc(j.site === 'Unassigned' ? '' : j.site)}</td><td><span class="st ${j.stage}">${esc(j.status)}</span></td><td class="hide-s">${j.stage === 'invoiced' || j.stage === 'done' ? dShort(j.due) : ''}</td><td class="num">${money(j.price)}</td></tr>`;
+  });
+  return `<section class="panel"><div class="p-head"><div><h3>Jobs</h3><p>${l.length} jobs · ${money(l.reduce((t, j) => t + j.price, 0))}</p></div></div>
+    <div class="jobs-tools"><input id="q" type="search" placeholder="Search reference, WO, location or job" value="${esc(F.q)}"></div>
+    <div class="tablewrap"><table class="jobs"><thead><tr><th>Ref</th><th>Location / job</th><th class="hide-s">Site</th><th>Status</th><th class="hide-s">Pay due</th><th class="num">Price</th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="empty">No jobs match.</td></tr>'}</tbody></table></div>
+    ${l.length > F.showJobs ? `<button class="more" id="moreJobs">Show more (${l.length - F.showJobs} left)</button>` : ''}</section>`;
+}
+
+/* ---------- page ---------- */
+function go() {
+  saveF();
+  renderFilters();
+  const list = filtered();
+  $('#main').innerHTML = renderHero(list) + renderKpis(list) + renderIncome(list) + renderProfit(list) + renderMaterials() + renderCash(list) + renderSplit(list)
+    + `<div class="two">${rankPanel('By job type', 'Tap one to filter', list, j => j.category, 'fcat')}${rankPanel('By site', 'Tap one to filter', list, j => j.site, 'fsite', k => k === 'Unassigned' ? 'Not set yet' : k)}</div>`
+    + `<div class="two">${renderPayments()}${renderFrontline() || '<div></div>'}</div>`
+    + renderJobs(list)
+    + `<p class="foot">Live from the Projects register and the Frontline master sheet. Figures ex GST. Lost jobs left out.</p>`;
+  $('#upd').textContent = 'Updated ' + new Date(D.built).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  $$('[data-colour]').forEach(b => b.onclick = () => { F.colourBy = b.dataset.colour; F.animated = false; go(); });
+  $$('[data-fcat]').forEach(b => b.onclick = () => { F.cats = [b.dataset.fcat]; go(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+  $$('[data-fsite]').forEach(b => b.onclick = () => { F.sites = [b.dataset.fsite]; go(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+  const q = $('#q');
+  if (q) q.oninput = () => { F.q = q.value; clearTimeout(go._t); go._t = setTimeout(() => { const pos = q.selectionStart; go(); const n = $('#q'); n.focus(); n.setSelectionRange(pos, pos); }, 250); };
+  const mj = $('#moreJobs'); if (mj) mj.onclick = () => { F.showJobs += 100; go(); };
+  bindTips(); bindProfit(); bindMaterials();
+  // scroll charts to today on small screens
+  ['#inc', '#cash', '#prof'].forEach(id => { const c = $(id); if (c && c.scrollWidth > c.clientWidth) { const ms = monthsIn(range()), i = ms.indexOf(NOW()); c.scrollLeft = i < 0 ? 0 : Math.max(0, (i - 2) / ms.length * c.scrollWidth); } });
+  if (!F.animated && !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+    $('#main').classList.add('enter');
+    $$('[data-count]').forEach(el => { const to = Number(el.dataset.count), t0 = performance.now(); const tick = t => { const p = Math.min(1, (t - t0) / 1000), e = 1 - Math.pow(1 - p, 3); el.textContent = k$(to * e); if (p < 1) requestAnimationFrame(tick); }; requestAnimationFrame(tick); });
+    F.animated = true;
+    setTimeout(() => $('#main').classList.remove('enter'), 1800);
+  }
+}
+function bindTips() {
+  const tip = $('#tip');
+  const show = el => {
+    const parts = el.dataset.tip.split('|');
+    tip.innerHTML = `<strong>${esc(parts[0])}</strong>` + parts.slice(1).map(p => { const [c, l, v] = p.split('~'); return `<div><span>${c ? `<i style="background:${c}"></i>` : ''}${esc(l)}</span><b>${esc(v || '')}</b></div>`; }).join('');
+    tip.classList.add('on');
+    const r = el.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 8, Math.max(8, r.left + r.width / 2 - tip.offsetWidth / 2));
+    tip.style.left = x + 'px'; tip.style.top = Math.max(8, r.top + window.scrollY + 10) + 'px';
+  };
+  $$('[data-tip]').forEach(el => { el.onmouseenter = () => show(el); el.onmouseleave = () => tip.classList.remove('on'); el.onclick = () => show(el); });
+  document.addEventListener('scroll', () => tip.classList.remove('on'), { passive: true });
+}
+
+$('#refresh').onclick = () => {
+  const b = $('#refresh');
+  if (window.google && google.script && google.script.run) {
+    b.textContent = 'Refreshing…';
+    google.script.run.withSuccessHandler(d => { D = d; index(); F.animated = false; go(); b.textContent = 'Refresh'; })
+      .withFailureHandler(e => { b.textContent = 'Refresh'; alert('Could not refresh: ' + (e && e.message || e)); }).getData(true);
+  } else location.reload();
+};
+function index() { Object.keys(pbByRef).forEach(k => delete pbByRef[k]); (D.cash || []).forEach(c => { pbByRef[c.ref] = c; }); }
+
+if (D) { index(); go(); } else $('#main').innerHTML = '<section class="panel"><h3>No data</h3><p>Open this page through the dashboard link, not directly.</p></section>';
+</script>
+</body>
+</html>
