@@ -148,7 +148,7 @@ function type_(job, ref) {
 
 function months_() {
   const now = new Date();
-  const want = [0, 1, 2, 3, 4, 5, 6].map(k => {   // this month + the next 6
+  const want = [-1, 0, 1, 2, 3, 4, 5, 6].map(k => {   // last month (shown only while it has unfinished jobs) + this month + the next 6
     const d = new Date(now.getFullYear(), now.getMonth() + k, 1);
     return Utilities.formatDate(d, TZ, 'yyyy-MM');
   });
@@ -166,9 +166,9 @@ function months_() {
       before: f ? num_(f.before) : 0, after: f ? num_(f.after) : 0, sr: !!(f && /✓/.test(f.sr)), hasFolder: !!f, done: f ? f.done : '',
     });
   });
-  return want.map(ym => {
+  return want.map((ym, i) => {
     const m = Number(ym.slice(5)) - 1;
-    return { ym: ym, label: MONTHS[m], year: ym.slice(0, 4), jobs: by[ym] };
+    return { ym: ym, label: MONTHS[m], year: ym.slice(0, 4), jobs: by[ym], when: i === 0 ? 'past' : i === 1 ? 'now' : 'ahead' };
   });
 }
 

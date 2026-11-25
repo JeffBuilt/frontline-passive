@@ -1,7 +1,7 @@
 /* Frontline app v3.0 - stripped back: month > jobs > before/after photos > docs > report. Offline-first. */
 'use strict';
 
-const APP_VERSION = '3.2.0';
+const APP_VERSION = '3.3.0';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const MAX_PX = 1600, JPEG_Q = 0.78;
 const TYPES = [['passive', 'Passive fire'], ['filters', 'Filters'], ['water', 'Water filters'], ['sit', 'SIT'], ['repairs', 'Fire repairs'], ['other', 'Other']];
@@ -119,6 +119,15 @@ function state(job) {
   return (c.before || c.after) ? 'amber' : 'red';
 }
 function month(ym) { return (S.months || []).find(m => m.ym === ym); }
+/** This month, last month (if it still has unfinished jobs) and the months ahead. Works with older cached data that has no "when". */
+function thisYm() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+function split() {
+  const ms = S.months || [], now = thisYm();
+  let i = ms.findIndex(m => m.when ? m.when === 'now' : m.ym === now);
+  if (i < 0) i = ms.findIndex(m => m.ym >= now); if (i < 0) i = 0;
+  const past = ms.slice(0, i).filter(m => m.jobs.some(j => state(j) !== 'green'));
+  return { past: past, cur: ms[i], ahead: ms.slice(i + 1, i + 7) };
+}
 function findJob(ref, wo) {
   for (const m of S.months || []) { const j = m.jobs.find(x => x.ref === ref && x.wo === wo); if (j) return { job: j, month: m }; }
   return null;
@@ -155,7 +164,8 @@ async function prefetch() {
   if (prefetching || !navigator.onLine || !S.months) return;
   prefetching = true;
   try {
-    const jobs = S.months[0].jobs.filter(j => state(j) !== 'green' && (j.before || 0) > 0);
+    const sp = split();
+    const jobs = sp.past.concat(sp.cur ? [sp.cur] : []).flatMap(m => m.jobs).filter(j => state(j) !== 'green' && (j.before || 0) > 0);
     for (const j of jobs) {
       const list = await photoList(j, 'before', true).catch(() => []);
       for (const p of list) await image(p.id).catch(() => null);
@@ -309,13 +319,18 @@ function monthsView() {
     return '<div class="top"><h1>Frontline</h1>' + syncChip() + '</div>' +
       (S.error ? '<div class="err">' + esc(S.error) + '</div>' : '<div class="empty">Loading jobs…</div>');
   }
-  const cur = S.months[0], p0 = progress(cur.jobs);
-  const tile = '<button class="month" data-act="month" data-ym="' + cur.ym + '">' +
-    '<div><span class="mn">' + esc(cur.label) + '</span><span class="yr">' + cur.year + '</span></div>' +
-    '<div class="money"><b>' + money(p0.done) + '</b> of ' + money(p0.tot) + ' done</div>' + bar(p0) +
-    '<div class="legend"><span><span class="dot" style="background:var(--green)"></span>' + p0.nDone + ' of ' + p0.n + ' jobs</span>' +
-    (p0.n - p0.nDone ? '<span><span class="dot" style="background:var(--red)"></span>' + (p0.n - p0.nDone) + ' to finish</span>' : '') + '</div></button>';
-  const ahead = S.months.slice(1, 7);
+  const sp = split(), cur = sp.cur, p0 = progress(cur.jobs);
+  const bigTile = (m, late) => {
+    const p = progress(m.jobs), left = p.n - p.nDone;
+    return '<button class="month' + (late ? ' late' : '') + '" data-act="month" data-ym="' + m.ym + '">' +
+      (late ? '<div class="latetag">Last month · still to finish</div>' : '') +
+      '<div><span class="mn">' + esc(m.label) + '</span><span class="yr">' + m.year + '</span></div>' +
+      '<div class="money"><b>' + money(p.done) + '</b> of ' + money(p.tot) + ' done</div>' + bar(p) +
+      '<div class="legend"><span><span class="dot" style="background:var(--green)"></span>' + p.nDone + ' of ' + p.n + ' jobs</span>' +
+      (left ? '<span><span class="dot" style="background:var(--red)"></span>' + left + (late ? ' jobs still need photos' : ' to finish') + '</span>' : '') + '</div></button>';
+  };
+  const tile = sp.past.map(m => bigTile(m, true)).join('') + bigTile(cur, false);
+  const ahead = sp.ahead;
   const tots = ahead.map(m => m.jobs.reduce((a, j) => a + (j.price || 0), 0));
   const top = Math.max(1, p0.tot, ...tots);
   const avg = tots.reduce((a, b) => a + b, 0) / (tots.length || 1);
