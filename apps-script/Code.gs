@@ -28,7 +28,8 @@ const ARCHIVE = 'Archived (removed in app)';   // inside Before Photos / After P
 // WO tab columns (0-based). G "PO Received" was added in Nov 2026, so everything from G on moved one to the right.
 const W = { ref: 0, wo: 1, loc: 2, job: 3, status: 5, price: 8, month: 11 };
 // Folders tab columns (1-based)
-const F = { key: 1, ref: 2, wo: 3, url: 4, invoice: 5, sr: 6, before: 9, after: 10, name: 11, docs: 12, done: 13 };  // M = "Marked complete" (app override)
+const F = { key: 1, ref: 2, wo: 3, url: 4, invoice: 5, sr: 6, before: 9, after: 10, name: 11, docs: 12 };  // M = Before ID, N = After ID
+const DONE_HEADER = 'Marked complete';   // app override column, found by its header (added after the last column if missing)
 
 /* ================= web app ================= */
 
@@ -206,13 +207,17 @@ function num_(v) { return Number(String(v || '').replace(/[^0-9]/g, '')) || 0; }
 
 function foldersSheet_() { return SpreadsheetApp.openById(REGISTER_ID).getSheetByName('Folders'); }
 
+/** 1-based column of the "Marked complete" header on the Folders tab, or 0 if it hasn't been made yet. */
+function doneCol_(header) { return header.findIndex(h => String(h).trim() === DONE_HEADER) + 1; }
+
 function foldersIndex_() {
   const rows = foldersSheet_().getDataRange().getDisplayValues();
+  const dc = doneCol_(rows[0] || []);
   const out = [];
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r[F.url - 1]) continue;
-    out.push({ row: i + 1, ref: s_(r[F.ref - 1]), wo: s_(r[F.wo - 1]), url: r[F.url - 1], sr: r[F.sr - 1], before: r[F.before - 1], after: r[F.after - 1], docs: s_(r[F.docs - 1]), done: s_(r[F.done - 1]) });
+    out.push({ row: i + 1, ref: s_(r[F.ref - 1]), wo: s_(r[F.wo - 1]), url: r[F.url - 1], sr: r[F.sr - 1], before: r[F.before - 1], after: r[F.after - 1], docs: s_(r[F.docs - 1]), done: dc ? s_(r[dc - 1]) : '' });
   }
   return out;
 }
@@ -256,9 +261,11 @@ function jobFolder_(ref, wo) {
 function markDone_(b) {
   const jf = jobFolder_(s_(b.ref), s_(b.wo));
   const sh = foldersSheet_();
-  if (!s_(sh.getRange(1, F.done).getValue())) sh.getRange(1, F.done).setValue('Marked complete');
+  const header = sh.getRange(1, 1, 1, sh.getLastColumn()).getDisplayValues()[0];
+  let col = doneCol_(header);
+  if (!col) { col = sh.getLastColumn() + 1; sh.getRange(1, col).setValue(DONE_HEADER); }
   const val = b.done ? 'Yes · ' + s_(b.by || 'app') + ' · ' + Utilities.formatDate(new Date(), TZ, 'd MMM') : '';
-  sh.getRange(jf.row, F.done).setValue(val);
+  sh.getRange(jf.row, col).setValue(val);
   return { ok: true, done: val };
 }
 
