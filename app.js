@@ -1,7 +1,7 @@
 /* Frontline app v3.0 - stripped back: month > jobs > before/after photos > docs > report. Offline-first. */
 'use strict';
 
-const APP_VERSION = '3.3.2';
+const APP_VERSION = '3.3.3';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const MAX_PX = 1600, JPEG_Q = 0.78;
 const TYPES = [['passive', 'Passive fire'], ['filters', 'Filters'], ['water', 'Water filters'], ['sit', 'SIT'], ['repairs', 'Fire repairs'], ['other', 'Other']];
@@ -119,10 +119,13 @@ function pending(job, kind) { return S.queue.filter(q => q.ref === job.ref && q.
 function counts(job) {
   return { before: (job.before || 0) + pending(job, 'before').length, after: (job.after || 0) + pending(job, 'after').length };
 }
+/** Invoiced or paid in the register = finished, whatever the photo count. */
+function invoiced(job) { return /invoice sent|invoiced|paid/i.test(job.status || ''); }
+
 /** Green only when after photos have caught up with before photos (or someone marked it complete). */
 function state(job) {
   const c = counts(job);
-  if (job.done) return 'green';
+  if (job.done || invoiced(job)) return 'green';
   if (c.before && c.after >= c.before) return 'green';
   return (c.before || c.after) ? 'amber' : 'red';
 }
@@ -133,7 +136,8 @@ function split() {
   const ms = S.months || [], now = thisYm();
   let i = ms.findIndex(m => m.when ? m.when === 'now' : m.ym === now);
   if (i < 0) i = ms.findIndex(m => m.ym >= now); if (i < 0) i = 0;
-  const past = ms.slice(0, i).filter(m => m.jobs.some(j => state(j) !== 'green'));
+  const quote = j => /rfq|project pending|quote/i.test(j.status || '');   // not won / not started: never holds a month open
+  const past = ms.slice(0, i).filter(m => m.jobs.some(j => !quote(j) && state(j) !== 'green'));
   return { past: past, cur: ms[i], ahead: ms.slice(i + 1, i + 7) };
 }
 function findJob(ref, wo) {
