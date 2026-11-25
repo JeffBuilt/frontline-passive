@@ -39,9 +39,10 @@ function doGet() {
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents || '{}');
-    checkPin_(body.pin);
+    const who = checkPin_(body.pin);
+    body.by = who;
     switch (body.action) {
-      case 'hello': return json_({ ok: true });
+      case 'hello': return json_({ ok: true, who: who });
       case 'months': return json_({ ok: true, months: months_() });
       case 'photos': return json_({ ok: true, photos: listPhotos_(body.ref, body.wo, body.kind) });
       case 'photo': return json_({ ok: true, id: body.id, img: thumb_(body.id, body.size || 1200) });
@@ -68,16 +69,29 @@ function withLock_(fn) {
 
 /* ================= PIN ================= */
 
+/** Each person has their own PIN (Script property PIN_HASHES = {"Jeff": hash, "Dan": hash}). Returns whose PIN it was. */
+function pins_() {
+  const p = PropertiesService.getScriptProperties();
+  let map = {};
+  try { map = JSON.parse(p.getProperty('PIN_HASHES') || '{}'); } catch (e) { map = {}; }
+  const old = p.getProperty('PIN_HASH');
+  if (old && !Object.keys(map).length) map = { Shared: old };
+  return map;
+}
+
 function checkPin_(pin) {
   const cache = CacheService.getScriptCache();
   const fails = Number(cache.get('PIN_FAILS') || 0);
   if (fails >= 10) throw new Error('Too many wrong PINs. Try again in 15 minutes.');
-  const want = PropertiesService.getScriptProperties().getProperty('PIN_HASH');
-  if (!want) throw new Error('No PIN set yet. Jeff: Passive Fire Master sheet > Frontline > Set app PIN.');
-  if (sha256_(String(pin || '')) !== want) {
+  const map = pins_();
+  if (!Object.keys(map).length) throw new Error('No PIN set yet. Jeff: Passive Fire Master sheet > Frontline > Set Jeff\'s PIN.');
+  const h = sha256_(String(pin || ''));
+  const who = Object.keys(map).find(k => map[k] === h);
+  if (!who) {
     cache.put('PIN_FAILS', String(fails + 1), 900);
     throw new Error('Wrong PIN');
   }
+  return who;
 }
 
 function sha256_(s) {
@@ -87,21 +101,34 @@ function sha256_(s) {
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('Frontline')
-    .addItem('Set app PIN', 'setPinPrompt')
+    .addItem("Set Jeff's PIN", 'setPinJeff')
+    .addItem("Set Dan's PIN", 'setPinDan')
+    .addSeparator()
     .addItem('Turn on nightly photo tidy', 'setupSweep')
     .addItem('Run photo tidy now', 'nightlySweep')
     .addToUi();
 }
 
-function setPinPrompt() {
+function setPinJeff() { setPinFor_('Jeff'); }
+function setPinDan() { setPinFor_('Dan'); }
+
+function setPinFor_(name) {
   const ui = SpreadsheetApp.getUi();
-  const r = ui.prompt('Frontline app PIN', 'Type a 4–8 digit PIN. You and Dan both use it on your phones.', ui.ButtonSet.OK_CANCEL);
+  const r = ui.prompt(name + "'s Frontline app PIN", 'Type a 4–8 digit PIN for ' + name + '. Their phone will ask for it once.', ui.ButtonSet.OK_CANCEL);
   if (r.getSelectedButton() !== ui.Button.OK) return;
   const pin = r.getResponseText().trim();
   if (!/^\d{4,8}$/.test(pin)) { ui.alert('Use 4 to 8 digits.'); return; }
-  PropertiesService.getScriptProperties().setProperty('PIN_HASH', sha256_(pin));
+  const h = sha256_(pin);
+  const map = pins_();
+  delete map.Shared;
+  const clash = Object.keys(map).find(k => k !== name && map[k] === h);
+  if (clash) { ui.alert('That PIN is already ' + clash + "'s. Pick a different one."); return; }
+  map[name] = h;
+  const p = PropertiesService.getScriptProperties();
+  p.setProperty('PIN_HASHES', JSON.stringify(map));
+  p.deleteProperty('PIN_HASH');
   CacheService.getScriptCache().remove('PIN_FAILS');
-  ui.alert('PIN saved. Phones logged in with the old PIN will ask for the new one.');
+  ui.alert(name + "'s PIN is saved.");
 }
 
 /** Run once from the editor so Google asks for every permission the app needs. */

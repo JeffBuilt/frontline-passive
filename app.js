@@ -1,7 +1,7 @@
 /* Frontline app v3.0 - stripped back: month > jobs > before/after photos > docs > report. Offline-first. */
 'use strict';
 
-const APP_VERSION = '3.3.0';
+const APP_VERSION = '3.3.1';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const MAX_PX = 1600, JPEG_Q = 0.78;
 const TYPES = [['passive', 'Passive fire'], ['filters', 'Filters'], ['water', 'Water filters'], ['sit', 'SIT'], ['repairs', 'Fire repairs'], ['other', 'Other']];
@@ -647,7 +647,7 @@ function bindPin() {
     const pin = $('#pin').value.trim(); if (!pin) return;
     $('#pinGo').disabled = true; $('#pinErr').textContent = '';
     S.pin = pin;
-    try { await api('hello'); ls.set('pin', pin); S.error = ''; render(); loadMonths(); sync(); }
+    try { const hi = await api('hello'); ls.set('pin', pin); if (hi.who) ls.set('who', hi.who); S.error = ''; render(); loadMonths(); sync(); }
     catch (e) { S.pin = ''; $('#pinGo').disabled = false; $('#pinErr').textContent = navigator.onLine ? e.message : 'Needs signal to log in the first time.'; }
   };
   $('#pinGo').onclick = go2;
