@@ -41,6 +41,8 @@ function doGet() {
 function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents || '{}');
+    if (body.action === 'claimPin') return json_(claimPin_(body));
+    if (body.action === 'pinStatus') return json_({ ok: true, open: PEOPLE.filter(n => !pins_()[n]) });
     const who = checkPin_(body.pin);
     body.by = who;
     switch (body.action) {
@@ -127,6 +129,28 @@ function onOpen() {
     .addItem('Turn on nightly photo tidy', 'setupSweep')
     .addItem('Run photo tidy now', 'nightlySweep')
     .addToUi();
+}
+
+const PEOPLE = ['Jeff', 'Dan'];
+
+/** First login on a phone: a person with no PIN yet picks their own. Once set, only the sheet menu can change it. */
+function claimPin_(b) {
+  const name = PEOPLE.find(n => n.toLowerCase() === String(b.name || '').toLowerCase());
+  const pin = String(b.newPin || '').trim();
+  if (!name) throw new Error('Unknown name');
+  if (!/^\d{4,8}$/.test(pin)) throw new Error('Use 4 to 8 digits');
+  const lock = LockService.getScriptLock(); lock.waitLock(10000);
+  try {
+    const map = pins_();
+    if (map[name]) throw new Error(name + ' already has a PIN. Ask Jeff to reset it from the sheet if it\'s forgotten.');
+    const h = sha256_(pin);
+    if (Object.keys(map).some(k => map[k] === h)) throw new Error('Pick a different PIN');
+    delete map.Shared;
+    map[name] = h;
+    PropertiesService.getScriptProperties().setProperty('PIN_HASHES', JSON.stringify(map));
+    log_(name, 'Set own PIN on first login');
+    return { ok: true, who: name };
+  } finally { lock.releaseLock(); }
 }
 
 function setPinJeff() { setPinFor_('Jeff'); }

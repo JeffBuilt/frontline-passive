@@ -1,7 +1,7 @@
 /* Frontline app v3.0 - stripped back: month > jobs > before/after photos > docs > report. Offline-first. */
 'use strict';
 
-const APP_VERSION = '3.3.7';
+const APP_VERSION = '3.4.0';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const MAX_PX = 1600, JPEG_Q = 0.78;
 const TYPES = [['passive', 'Passive fire'], ['filters', 'Filters'], ['water', 'Water filters'], ['sit', 'SIT'], ['repairs', 'Fire repairs'], ['other', 'Other']];
@@ -669,7 +669,8 @@ function finishSheet() {
 function pinView() {
   return '<div class="pin"><img src="icon-192.png" alt=""><h1 style="font:700 30px BarlowC,Barlow">Frontline</h1>' +
     '<input class="in" id="pin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">' +
-    '<button class="btn wide cam" id="pinGo">Log in</button><div class="err" id="pinErr">' + esc(S.error) + '</div></div>';
+    '<button class="btn wide cam" id="pinGo">Log in</button><div class="err" id="pinErr">' + esc(S.error) + '</div>' +
+    '<div id="firstBox"></div></div>';
 }
 function bindPin() {
   const go2 = async () => {
@@ -682,6 +683,30 @@ function bindPin() {
   $('#pinGo').onclick = go2;
   $('#pin').onkeydown = e => { if (e.key === 'Enter') go2(); };
   $('#pin').focus();
+  // anyone without a PIN yet can pick their own here
+  api('pinStatus').then(out => {
+    if (!out.open || !out.open.length || !$('#firstBox')) return;
+    $('#firstBox').innerHTML = '<div class="first"><div class="ft">First time on this app?</div>' +
+      out.open.map(n => '<button class="sbtn" data-first="' + esc(n) + '" style="width:100%;margin-top:8px">I\'m ' + esc(n) + ' · set my PIN</button>').join('') + '</div>';
+    $('#firstBox').querySelectorAll('[data-first]').forEach(b => b.onclick = () => firstPin(b.dataset.first));
+  }).catch(() => {});
+}
+function firstPin(name) {
+  $('#firstBox').innerHTML = '<div class="first"><div class="ft">' + esc(name) + ', pick a 4–8 digit PIN</div>' +
+    '<input class="in" id="np1" type="password" inputmode="numeric" autocomplete="new-password" placeholder="New PIN">' +
+    '<input class="in" id="np2" type="password" inputmode="numeric" autocomplete="new-password" placeholder="Same again">' +
+    '<button class="btn wide green" id="npGo">Save and log in</button><div class="err" id="npErr"></div></div>';
+  $('#np1').focus();
+  $('#npGo').onclick = async () => {
+    const a = $('#np1').value.trim(), b2 = $('#np2').value.trim();
+    if (!/^\d{4,8}$/.test(a)) { $('#npErr').textContent = 'Use 4 to 8 digits.'; return; }
+    if (a !== b2) { $('#npErr').textContent = "Those don't match."; return; }
+    $('#npGo').disabled = true;
+    try {
+      const out = await api('claimPin', { name: name, newPin: a });
+      S.pin = a; ls.set('pin', a); ls.set('who', out.who); S.error = ''; render(); loadMonths(); sync();
+    } catch (e) { $('#npGo').disabled = false; $('#npErr').textContent = e.message; }
+  };
 }
 
 /* ---------------- events ---------------- */
