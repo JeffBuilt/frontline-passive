@@ -1,7 +1,7 @@
 /* Frontline app v3.0 - stripped back: month > jobs > before/after photos > docs > report. Offline-first. */
 'use strict';
 
-const APP_VERSION = '3.3.3';
+const APP_VERSION = '3.3.4';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const MAX_PX = 1600, JPEG_Q = 0.78;
 const TYPES = [['passive', 'Passive fire'], ['filters', 'Filters'], ['water', 'Water filters'], ['sit', 'SIT'], ['repairs', 'Fire repairs'], ['other', 'Other']];
@@ -138,7 +138,8 @@ function split() {
   if (i < 0) i = ms.findIndex(m => m.ym >= now); if (i < 0) i = 0;
   const quote = j => /rfq|project pending|quote/i.test(j.status || '');   // not won / not started: never holds a month open
   const past = ms.slice(0, i).filter(m => m.jobs.some(j => !quote(j) && state(j) !== 'green'));
-  return { past: past, cur: ms[i], ahead: ms.slice(i + 1, i + 7) };
+  const prev = i > 0 && past.indexOf(ms[i - 1]) < 0 ? ms[i - 1] : null;   // last month, all finished
+  return { past: past, prev: prev, cur: ms[i], ahead: ms.slice(i + 1, i + 7) };
 }
 function findJob(ref, wo) {
   for (const m of S.months || []) { const j = m.jobs.find(x => x.ref === ref && x.wo === wo); if (j) return { job: j, month: m }; }
@@ -341,7 +342,18 @@ function monthsView() {
       '<div class="legend"><span><span class="dot" style="background:var(--green)"></span>' + p.nDone + ' of ' + p.n + ' jobs</span>' +
       (left ? '<span><span class="dot" style="background:var(--red)"></span>' + left + (late ? ' jobs still need photos' : ' to finish') + '</span>' : '') + '</div></button>';
   };
-  const tile = sp.past.map(m => bigTile(m, true)).join('') + bigTile(cur, false);
+  let doneRow = '';
+  if (sp.prev) {
+    const work = sp.prev.jobs.filter(j => !/rfq|project pending|quote/i.test(j.status || ''));
+    const tot = work.reduce((a, j) => a + (j.price || 0), 0);
+    const inv = work.filter(invoiced).reduce((a, j) => a + (j.price || 0), 0);
+    if (tot) doneRow = '<div class="ahead donecard"><button class="mini done" data-act="month" data-ym="' + sp.prev.ym + '">' +
+      '<span class="mm">' + esc(sp.prev.label.slice(0, 3)) + '</span>' +
+      '<span class="mbar"><i style="width:' + Math.min(100, inv / tot * 100) + '%"></i></span>' +
+      '<span class="mv">' + money(inv) + '</span><span class="lt"><span class="donetag">✓</span></span></button>' +
+      '<div class="dsub">Invoiced' + (inv < tot ? ' · ' + money(tot - inv) + ' not yet' : '') + '</div></div>';
+  }
+  const tile = sp.past.map(m => bigTile(m, true)).join('') + doneRow + bigTile(cur, false);
   const ahead = sp.ahead;
   const tots = ahead.map(m => m.jobs.reduce((a, j) => a + (j.price || 0), 0));
   const top = Math.max(1, p0.tot, ...tots);
