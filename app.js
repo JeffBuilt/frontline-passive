@@ -1,7 +1,7 @@
 /* Frontline app v3.0 - stripped back: month > jobs > before/after photos > docs > report. Offline-first. */
 'use strict';
 
-const APP_VERSION = '3.3.4';
+const APP_VERSION = '3.3.5';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const MAX_PX = 1600, JPEG_Q = 0.78;
 const TYPES = [['passive', 'Passive fire'], ['filters', 'Filters'], ['water', 'Water filters'], ['sit', 'SIT'], ['repairs', 'Fire repairs'], ['other', 'Other']];
@@ -318,9 +318,15 @@ function renderSync() { const el = $('.sync'); if (el) { const s = syncText(); e
 function syncChip() { const s = syncText(); return '<button class="sync ' + s.cls + '" data-act="refresh">' + s.txt + '</button>'; }
 
 function progress(jobs) {
-  let tot = 0, done = 0, half = 0, nDone = 0;
-  jobs.forEach(j => { const st = state(j); tot += j.price || 0; if (st === 'green') { done += j.price || 0; nDone++; } else if (st === 'amber') half += j.price || 0; });
-  return { tot, done, half, nDone, n: jobs.length };
+  let tot = 0, done = 0, half = 0, nDone = 0, nHalf = 0;
+  jobs.forEach(j => { const st = state(j); tot += j.price || 0; if (st === 'green') { done += j.price || 0; nDone++; } else if (st === 'amber') { half += j.price || 0; nHalf++; } });
+  return { tot, done, half, nDone, nHalf, nNone: jobs.length - nDone - nHalf, n: jobs.length };
+}
+/** Key under every progress bar: same three colours as the bar. */
+function key(p) {
+  const it = (c, n, t) => '<span><span class="dot" style="background:' + c + '"></span>' + n + ' ' + t + '</span>';
+  return '<div class="legend">' + it('var(--green)', p.nDone, 'done') + (p.nHalf ? it('var(--amber)', p.nHalf, 'started') : '') +
+    (p.nNone ? it('#3a4d68', p.nNone, 'not started') : '') + '</div>';
 }
 function bar(p) {
   const g = p.tot ? p.done / p.tot * 100 : (p.n ? p.nDone / p.n * 100 : 0), a = p.tot ? p.half / p.tot * 100 : 0;
@@ -334,13 +340,12 @@ function monthsView() {
   }
   const sp = split(), cur = sp.cur, p0 = progress(cur.jobs);
   const bigTile = (m, late) => {
-    const p = progress(m.jobs), left = p.n - p.nDone;
+    const p = progress(m.jobs);
     return '<button class="month' + (late ? ' late' : '') + '" data-act="month" data-ym="' + m.ym + '">' +
       (late ? '<div class="latetag">Last month · still to finish</div>' : '') +
       '<div><span class="mn">' + esc(m.label) + '</span><span class="yr">' + m.year + '</span></div>' +
       '<div class="money"><b>' + money(p.done) + '</b> of ' + money(p.tot) + ' done</div>' + bar(p) +
-      '<div class="legend"><span><span class="dot" style="background:var(--green)"></span>' + p.nDone + ' of ' + p.n + ' jobs</span>' +
-      (left ? '<span><span class="dot" style="background:var(--red)"></span>' + left + (late ? ' jobs still need photos' : ' to finish') + '</span>' : '') + '</div></button>';
+      key(p) + '</button>';
   };
   let doneRow = '';
   if (sp.prev) {
@@ -388,7 +393,7 @@ function monthView() {
   jobs.sort((a, b) => rank[state(a)] - rank[state(b)] || shortLoc(a.loc).localeCompare(shortLoc(b.loc)));
   const cards = jobs.map(jobCard).join('') || '<div class="empty">' + (S.hideDone ? 'All done here 🎉' : 'No jobs') + '</div>';
   return '<div class="top"><button class="back" data-act="home">‹</button><h1>' + esc(m.label) + '</h1>' + syncChip() + '</div>' +
-    '<div class="money" style="margin:0 2px"><b>' + money(p.done) + '</b> of ' + money(p.tot) + ' · ' + p.nDone + '/' + p.n + ' jobs</div>' + bar(p) +
+    '<div class="money" style="margin:0 2px"><b>' + money(p.done) + '</b> of ' + money(p.tot) + ' done</div>' + bar(p) + key(p) + '<div style="height:10px"></div>' +
     '<div class="chips">' + chips + '</div>' +
     '<div class="row"><button class="toggle' + (S.hideDone ? ' on' : '') + '" data-act="hide">' + (S.hideDone ? '✓ Hiding finished' : 'Hide finished') + '</button>' +
     '<input class="search" placeholder="🔍 VP, WO, room" value="' + esc(S.q) + '" data-act="search"></div>' + cards;
