@@ -16,6 +16,7 @@
  */
 
 const REGISTER_ID = '1i3U44wdBX_U6hZkELQZ1RbhmUk3D4d0Es4B8nfeuRgU';  // Projects 2026 Project/Quote List
+const MASTER_ID = '1NIoah5dnH3XCKl-8XCBvQVFsdwuO0moIaJGkC-sQKm0';     // Passive Fire Master (holds the hidden "App log" tab)
 const JOBS_ROOT_ID = '1z3V08ibtgtZdXUkiPvClSJyiON2pRAUS';            // parent of "2026-11 November" etc.
 const LOGO_ID = '1JyEHzwk8WvUt-eDbWYfBa7TLa1yuCkJ7';                 // Frontline app assets/SR logo.jpg
 const SIGNOFF_ID = '1a7wBpkngOUQ9B2LapHDca03sVklsWS19';              // Frontline app assets/SR sign-off.png
@@ -66,6 +67,24 @@ function withLock_(fn) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try { return fn(); } finally { lock.releaseLock(); }
+}
+
+/* ================= hidden activity log ================= */
+
+/** One row per app action, on a hidden "App log" tab in Passive Fire Master. Never shown in the app. */
+function log_(who, action, ref, wo, kind, name, fileId, takenAt) {
+  try {
+    const ss = SpreadsheetApp.openById(MASTER_ID);
+    let sh = ss.getSheetByName('App log');
+    if (!sh) {
+      sh = ss.insertSheet('App log');
+      sh.appendRow(['Logged', 'Who', 'Action', 'Job', 'WO', 'Before/After', 'File name', 'Taken on phone', 'Drive file']);
+      sh.setFrozenRows(1);
+      sh.hideSheet();
+    }
+    sh.appendRow([new Date(), who || '', action, ref || '', wo || '', kind || '', name || '',
+      takenAt ? new Date(Number(takenAt)) : '', fileId ? 'https://drive.google.com/file/d/' + fileId + '/view' : '']);
+  } catch (e) { /* logging must never block the app */ }
 }
 
 /* ================= PIN ================= */
@@ -266,6 +285,7 @@ function markDone_(b) {
   if (!col) { col = sh.getLastColumn() + 1; sh.getRange(1, col).setValue(DONE_HEADER); }
   const val = b.done ? 'Yes · ' + s_(b.by || 'app') + ' · ' + Utilities.formatDate(new Date(), TZ, 'd MMM') : '';
   sh.getRange(jf.row, col).setValue(val);
+  log_(b.by, b.done ? 'Marked complete' : 'Undid marked complete', b.ref, b.wo);
   return { ok: true, done: val };
 }
 
@@ -339,7 +359,10 @@ function upload_(b) {
   const name = [s_(b.ref), short_(b.loc), s_(b.unit), label + ' ' + n].filter(String).join(' - ').replace(/[\/\\:*?"<>|]/g, '-') + '.jpg';
   const data = String(b.data || '').replace(/^data:[^,]+,/, '');
   if (!data) throw new Error('No photo data');
-  sub.createFile(Utilities.newBlob(Utilities.base64Decode(data), 'image/jpeg', name));
+  const created = sub.createFile(Utilities.newBlob(Utilities.base64Decode(data), 'image/jpeg', name));
+  const takenAt = b.t ? new Date(Number(b.t)) : new Date();
+  try { created.setDescription('Taken by ' + s_(b.by || 'unknown') + ' · ' + Utilities.formatDate(takenAt, TZ, 'd MMM yyyy h:mm a') + ' (Frontline app)'); } catch (e) {}
+  log_(b.by, 'Photo added', b.ref, b.wo, kind, name, created.getId(), b.t);
   const count = images_(sub).length;
   foldersSheet_().getRange(jf.row, kind === 'after' ? F.after : F.before).setValue(count);
   const out = { ok: true, name: name, count: count, kind: kind };
@@ -367,7 +390,8 @@ function archive_(b) {
   while (parents.hasNext()) if (parents.next().getId() === sub.getId()) inside = true;
   if (!inside) throw new Error('That photo is not in this job\'s ' + SUB[kind] + ' folder');
   file.moveTo(child_(sub, ARCHIVE));
-  file.setDescription('Removed in the Frontline app ' + Utilities.formatDate(new Date(), TZ, 'd MMM yyyy h:mm a'));
+  file.setDescription(String(file.getDescription() || '') + ' · Removed by ' + s_(b.by || 'unknown') + ' ' + Utilities.formatDate(new Date(), TZ, 'd MMM yyyy h:mm a'));
+  log_(b.by, 'Photo removed (archived)', b.ref, b.wo, kind, file.getName(), file.getId());
   const count = images_(sub).length;
   foldersSheet_().getRange(jf.row, kind === 'after' ? F.after : F.before).setValue(count);
   return { ok: true, count: count, kind: kind };
@@ -510,6 +534,7 @@ function finish_(b) {
   while (old.hasNext()) { const o = old.next(); try { o.setTrashed(true); } catch (e) { o.setName(ref + ' - SR (old ' + Utilities.formatDate(new Date(), TZ, 'yyyyMMdd-HHmm') + ').pdf'); } }
   const pdf = docs.createFile(Utilities.newBlob(html, 'text/html', 'sr.html').getAs('application/pdf').setName(name));
   foldersSheet_().getRange(jf.row, F.sr).setValue('✓');
+  log_(b.by, 'Service report made', ref, wo, '', name, pdf.getId());
   return { ok: true, url: pdf.getUrl(), name: name, before: before.length, after: after.length };
 }
 

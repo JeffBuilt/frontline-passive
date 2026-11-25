@@ -1,7 +1,7 @@
 /* Frontline app v3.0 - stripped back: month > jobs > before/after photos > docs > report. Offline-first. */
 'use strict';
 
-const APP_VERSION = '3.3.6';
+const APP_VERSION = '3.3.7';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const MAX_PX = 1600, JPEG_Q = 0.78;
 const TYPES = [['passive', 'Passive fire'], ['filters', 'Filters'], ['water', 'Water filters'], ['sit', 'SIT'], ['repairs', 'Fire repairs'], ['other', 'Other']];
@@ -260,7 +260,7 @@ async function sync() {
       S.queue = q;
       if (!q.length) break;
       const it = q[0];
-      const out = await api('upload', { uid: it.k, ref: it.ref, wo: it.wo, loc: it.loc, unit: it.unit, kind: it.kind, data: it.data }, 120000);
+      const out = await api('upload', { uid: it.k, ref: it.ref, wo: it.wo, loc: it.loc, unit: it.unit, kind: it.kind, data: it.data, t: it.t }, 120000);
       await idb.del('queue', it.k);
       const f = findJob(it.ref, it.wo);
       if (f) { f.job[it.kind] = out.count; ls.set('months', S.months); }
