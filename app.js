@@ -1,7 +1,7 @@
 /* Frontline app v3.0 - stripped back: month > jobs > before/after photos > docs > report. Offline-first. */
 'use strict';
 
-const APP_VERSION = '3.3.1';
+const APP_VERSION = '3.3.2';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const MAX_PX = 1600, JPEG_Q = 0.78;
 const TYPES = [['passive', 'Passive fire'], ['filters', 'Filters'], ['water', 'Water filters'], ['sit', 'SIT'], ['repairs', 'Fire repairs'], ['other', 'Other']];
@@ -97,6 +97,14 @@ function shortLoc(loc) {
     .replace(/\s+-\s+/g, ' · ')
     .replace(/\s{2,}/g, ' ').trim();
 }
+/** Split the short location into where (building + room) and what (the detail), e.g. "AT · L4 South Plant Room" / "Penetrations on ceilings". */
+function locParts(loc) {
+  const parts = shortLoc(loc).split(' · ').filter(String);
+  if (!parts.length) return { where: '', what: '' };
+  const n = parts.length > 1 && /^(AT|HSB|LTB|ONJ|Florey|Bioresources|Repat|Repatriation|CPU)$/i.test(parts[0]) ? 2 : 1;
+  return { where: parts.slice(0, n).join(' · '), what: parts.slice(n).join(' · ') };
+}
+
 /** Filter units ("AHU K4-1, AHU K4-2 and AHU-L03") from the part after the room. */
 function unitsOf(job) {
   if (!/filters|water/.test(job.type)) return [];
@@ -374,7 +382,7 @@ function jobCard(j) {
   const c = counts(j), st = state(j);
   return '<button class="job ' + st + '" data-act="job" data-ref="' + esc(j.ref) + '" data-wo="' + esc(j.wo) + '">' +
     '<div class="vp">' + esc(j.ref || '—') + '<small>' + esc(TYPE_NAME[j.type] || j.job) + '</small></div>' +
-    '<div class="loc">' + esc(shortLoc(j.loc) || j.job) + '</div>' +
+    (() => { const lp = locParts(j.loc); return '<div class="loc">' + esc(lp.where || j.job) + '</div>' + (lp.what ? '<div class="what">' + esc(lp.what) + '</div>' : ''); })() +
     '<div class="pills"><span class="pill ' + (c.before ? 'ok' : 'no') + '">Before ' + c.before + '</span>' +
     '<span class="pill ' + (c.after && c.after >= c.before ? 'ok' : c.after ? 'part' : 'no') + '">After ' + c.after + (c.before ? '/' + c.before : '') + '</span></div>' +
     (j.done && !(c.before && c.after >= c.before) ? '<div class="ovr">Marked complete</div>' : '') + '</button>';
@@ -408,7 +416,7 @@ function jobView() {
   };
   return '<div class="top"><button class="back" data-act="back">‹</button><h1>' + esc(job.ref) + '</h1>' + syncChip() + '</div>' +
     '<div class="jh"><div class="badge ' + st + '">' + (st === 'green' ? ICON.check.replace(/26/g, '18') : ICON.warn) + '<span>' + stTxt + '</span></div>' +
-    '<div class="jl">' + esc(shortLoc(job.loc) || job.job) + '</div>' +
+    (() => { const lp = locParts(job.loc); return '<div class="jl">' + esc(lp.where || job.job) + '</div>' + (lp.what ? '<div class="jw">' + esc(lp.what) + '</div>' : ''); })() +
     '<div class="meta"><span class="tag">' + esc(TYPE_NAME[job.type] || job.job) + '</span>' + (job.wo ? '<span>WO ' + esc(job.wo) + '</span>' : '') + '</div>' +
     (units.length ? '<div class="ul">Unit you are on <span>(optional, names the photos)</span></div><div class="units">' +
       units.map(u => '<button class="unit' + (S.unit === u ? ' on' : '') + '" data-act="unit" data-u="' + esc(u) + '">' + esc(u) + '</button>').join('') + '</div>' : '') +
