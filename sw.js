@@ -1,5 +1,5 @@
 /* Offline cache for the app shell. Bump VERSION when app files change. */
-const VERSION = 'fl-v3.4.0';
+const VERSION = 'fl-v3.4.1';
 const SHELL = ['./', 'index.html', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png',
   'fonts/barlow-latin-500-normal.woff2', 'fonts/barlow-latin-600-normal.woff2', 'fonts/barlow-semi-condensed-latin-700-normal.woff2'];
 

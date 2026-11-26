@@ -1,7 +1,7 @@
 /* Frontline app v3.0 - stripped back: month > jobs > before/after photos > docs > report. Offline-first. */
 'use strict';
 
-const APP_VERSION = '3.4.0';
+const APP_VERSION = '3.4.1';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const MAX_PX = 1600, JPEG_Q = 0.78;
 const TYPES = [['passive', 'Passive fire'], ['filters', 'Filters'], ['water', 'Water filters'], ['sit', 'SIT'], ['repairs', 'Fire repairs'], ['other', 'Other']];
@@ -85,6 +85,7 @@ async function api(action, data, timeoutMs) {
 const $ = s => document.querySelector(s);
 const esc = v => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const money = n => '$' + (n >= 1000 ? (Math.round(n / 100) / 10).toLocaleString('en-AU') + 'k' : Math.round(n).toLocaleString('en-AU'));
+const dollars = n => '$' + Math.round(n).toLocaleString('en-AU');
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
 /** Short, readable location: building codes (AT, HSB, LTB, ONJ), no 258.4.3 prefix. */
@@ -402,7 +403,8 @@ function monthView() {
 function jobCard(j) {
   const c = counts(j), st = state(j);
   return '<button class="job ' + st + '" data-act="job" data-ref="' + esc(j.ref) + '" data-wo="' + esc(j.wo) + '">' +
-    '<div class="vp">' + esc(j.ref || '—') + '<small>' + esc(TYPE_NAME[j.type] || j.job) + '</small></div>' +
+    '<div class="vprow"><div class="vp">' + esc(j.ref || '—') + '<small>' + esc(TYPE_NAME[j.type] || j.job) + '</small></div>' +
+    (j.price ? '<div class="price">' + dollars(j.price) + '</div>' : '') + '</div>' +
     (() => { const lp = locParts(j.loc); return '<div class="loc">' + esc(lp.where || j.job) + '</div>' + (lp.what ? '<div class="what">' + esc(lp.what) + '</div>' : ''); })() +
     '<div class="pills"><span class="pill ' + (c.before ? 'ok' : 'no') + '">Before ' + c.before + '</span>' +
     '<span class="pill ' + (c.after && c.after >= c.before ? 'ok' : c.after ? 'part' : 'no') + '">After ' + c.after + (c.before ? '/' + c.before : '') + '</span></div>' +
@@ -438,7 +440,7 @@ function jobView() {
   return '<div class="top"><button class="back" data-act="back">‹</button><h1>' + esc(job.ref) + '</h1>' + syncChip() + '</div>' +
     '<div class="jh"><div class="badge ' + st + '">' + (st === 'green' ? ICON.check.replace(/26/g, '18') : ICON.warn) + '<span>' + stTxt + '</span></div>' +
     (() => { const lp = locParts(job.loc); return '<div class="jl">' + esc(lp.where || job.job) + '</div>' + (lp.what ? '<div class="jw">' + esc(lp.what) + '</div>' : ''); })() +
-    '<div class="meta"><span class="tag">' + esc(TYPE_NAME[job.type] || job.job) + '</span>' + (job.wo ? '<span>WO ' + esc(job.wo) + '</span>' : '') + '</div>' +
+    '<div class="meta"><span class="tag">' + esc(TYPE_NAME[job.type] || job.job) + '</span>' + (job.price ? '<span class="tag pricetag">' + dollars(job.price) + '</span>' : '') + (job.wo ? '<span>WO ' + esc(job.wo) + '</span>' : '') + '</div>' +
     (units.length ? '<div class="ul">Unit you are on <span>(optional, names the photos)</span></div><div class="units">' +
       units.map(u => '<button class="unit' + (S.unit === u ? ' on' : '') + '" data-act="unit" data-u="' + esc(u) + '">' + esc(u) + '</button>').join('') + '</div>' : '') +
     '</div>' + sect('before', 'Before') + sect('after', 'After') +
