@@ -379,7 +379,15 @@ function upload_(b) {
   const jf = jobFolder_(s_(b.ref), s_(b.wo));
   const sub = child_(jf.folder, SUB[kind]);
   const label = kind === 'after' ? 'After' : 'Before';
-  const n = nextNumber_(sub, label);
+  let n = nextNumber_(sub, label);
+  const want = Number(b.num) || 0;
+  if (want > 0) {
+    // a matching after for Before N: becomes After N; an older After N is moved to Archived (never deleted)
+    n = want;
+    const re = new RegExp('\\b' + label + ' ' + n + '\\b', 'i');
+    const it = sub.getFiles();
+    while (it.hasNext()) { const x = it.next(); if (/^image\//.test(x.getMimeType()) && re.test(x.getName())) { x.moveTo(child_(sub, ARCHIVE)); log_(b.by, 'Photo replaced (archived)', b.ref, b.wo, kind, x.getName(), x.getId()); } }
+  }
   const name = [s_(b.ref), short_(b.loc), s_(b.unit), label + ' ' + n].filter(String).join(' - ').replace(/[\/\\:*?"<>|]/g, '-') + '.jpg';
   const data = String(b.data || '').replace(/^data:[^,]+,/, '');
   if (!data) throw new Error('No photo data');
@@ -500,6 +508,18 @@ const SR = {
   },
 };
 
+/** Report photos: Before N beside After N, then any photo without a partner. */
+function pairs_(before, after, img, esc) {
+  const num = (f, i) => { const m = String(f.name).match(/\b(?:Before|After) (\d+)\b/i); return m ? Number(m[1]) : i + 1; };
+  const A = {}; after.forEach((f, i) => { A[num(f, i)] = f; });
+  const cell = (f, label) => { const src = f ? img(f.id) : ''; return '<div class="ph">' + (src ? '<img src="' + src + '">' : '<div style="height:200px;border:1px dashed #9bbcb0"></div>') + '<div class="cap">' + label + '</div></div>'; };
+  const rows = [];
+  before.forEach((f, i) => { const n = num(f, i); rows.push(cell(f, 'Before ' + n) + cell(A[n], A[n] ? 'After ' + n : 'After ' + n + ' – not taken')); delete A[n]; });
+  const extra = Object.keys(A).map(Number).sort((x, y) => x - y).map(n => cell(A[n], 'After ' + n));
+  if (!rows.length && !extra.length) return '';
+  return '<div class="pb"></div><h2>Before and After Photos</h2><div class="g">' + rows.join('') + extra.join('') + '</div>';
+}
+
 function where_(p) { return [p.location, p.building, p.site].filter(String).join(', '); }
 
 function finish_(b) {
@@ -550,7 +570,7 @@ function finish_(b) {
     '<h3>Notes</h3><p>' + esc(notes) + '</p>' +
     '<h3>Recommendations</h3><p>' + esc(t.recs) + '</p>' +
     '<div class="so"><div>Supervisor Sign-Off</div><img src="' + fileImg(SIGNOFF_ID) + '"></div>' +
-    gallery('Before Photos', before) + gallery('After Photos', after) +
+    pairs_(before, after, img, esc) +
     '</body></html>';
 
   const name = ref + ' - SR.pdf';

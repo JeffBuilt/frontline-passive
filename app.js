@@ -1,7 +1,7 @@
 /* Frontline app v3.0 - stripped back: month > jobs > before/after photos > docs > report. Offline-first. */
 'use strict';
 
-const APP_VERSION = '3.4.3';
+const APP_VERSION = '3.5.0';
 const SERVER_URL = 'https://script.google.com/macros/s/AKfycbyZOt9Zo4c6xSaY2YV8H8NXMR4NHx77dT6tz_qEVp1bZX-rNVVZJ7nDVpnh2G2DF_wW/exec';
 const MAX_PX = 1600, JPEG_Q = 0.78;
 const TYPES = [['passive', 'Passive fire'], ['filters', 'Filters'], ['water', 'Water filters'], ['sit', 'SIT'], ['repairs', 'Fire repairs'], ['other', 'Other']];
@@ -228,27 +228,55 @@ async function shrink(file) {
   return c.toDataURL('image/jpeg', JPEG_Q);
 }
 
-let pickKind = 'before';
-function pick(kind, camera) {
-  pickKind = kind;
+/** Photo number from its name ("… Before 3.jpg" -> 3), else its position. */
+function numOf(name, pos) { const m = String(name || '').match(/\b(?:Before|After) (\d+)\b/i); return m ? Number(m[1]) : pos + 1; }
+/** Numbers already used by after photos (uploaded + waiting on the phone). */
+function afterNums(job) {
+  const k = job.ref + '|' + job.wo + '|after';
+  const nums = new Set((S.lists[k] || []).map((p, i) => numOf(p.name, i)));
+  pending(job, 'after').forEach(q => { if (q.num) nums.add(q.num); });
+  return nums;
+}
+function beforeNums(job) {
+  const k = job.ref + '|' + job.wo + '|before';
+  return (S.lists[k] || []).map((p, i) => numOf(p.name, i)).concat(pending(job, 'before').map(q => q.num).filter(Boolean));
+}
+/** Next after numbers to fill: start at `from` (if given), then the gaps, then on past the end. */
+function nextAfterNums(job, count, from) {
+  const used = afterNums(job), out = [];
+  if (from) { out.push(from); used.add(from); }
+  for (let n = 1; out.length < count && n < 500; n++) if (!used.has(n)) { out.push(n); used.add(n); }
+  return out;
+}
+
+let pickKind = 'before', pickNum = 0, onPicked = null;
+function pick(kind, camera, num, after) {
+  pickKind = kind; pickNum = num || 0; onPicked = after || null;
   const el = camera ? $('#camIn') : $('#libIn');
   el.value = ''; el.click();
 }
 
 async function addFiles(files) {
   const f = findJob(S.view.ref, S.view.wo); if (!f || !files.length) return;
-  const job = f.job, kind = pickKind;
+  const job = f.job, kind = pickKind, cb = onPicked;
+  // after photos get a number so each lines up with its before (After 3 = Before 3)
+  const nums = kind === 'after' ? nextAfterNums(job, files.length, pickNum) : [];
+  pickNum = 0; onPicked = null;
   toast(files.length > 1 ? 'Adding ' + files.length + ' photos…' : 'Adding photo…', 1500);
+  let idx = 0;
   for (const file of files) {
+    const num = nums[idx++] || 0;
     try {
       const data = await shrink(file);
-      const item = { k: uid(), ref: job.ref, wo: job.wo, loc: job.loc, unit: S.unit, kind: kind, data: data, t: Date.now() };
+      const item = { k: uid(), ref: job.ref, wo: job.wo, loc: job.loc, unit: S.unit, kind: kind, num: num, data: data, t: Date.now() };
       await idb.put('queue', item); S.queue.push(item);
     } catch (e) { toast('One photo could not be read: ' + (file.name || '')); }
   }
   render();
   const c = counts(job);
-  toast((kind === 'after' ? 'After' : 'Before') + ' photos: ' + c[kind] + (navigator.onLine ? ' · uploading' : ' · saved on phone, will upload with signal'));
+  toast((kind === 'after' ? (nums.length === 1 ? 'After ' + nums[0] + ' saved' : 'After photos: ' + c.after) : 'Before photos: ' + c.before) +
+    (navigator.onLine ? ' · uploading' : ' · saved on phone, will upload with signal'));
+  if (cb) cb(nums);
   sync();
 }
 
@@ -261,7 +289,7 @@ async function sync() {
       S.queue = q;
       if (!q.length) break;
       const it = q[0];
-      const out = await api('upload', { uid: it.k, ref: it.ref, wo: it.wo, loc: it.loc, unit: it.unit, kind: it.kind, data: it.data, t: it.t }, 120000);
+      const out = await api('upload', { uid: it.k, ref: it.ref, wo: it.wo, loc: it.loc, unit: it.unit, kind: it.kind, num: it.num || 0, data: it.data, t: it.t }, 120000);
       await idb.del('queue', it.k);
       const f = findJob(it.ref, it.wo);
       if (f) { f.job[it.kind] = out.count; ls.set('months', S.months); }
@@ -454,19 +482,40 @@ function jobView() {
 async function fillThumbs() {
   const f = findJob(S.view.ref, S.view.wo); if (!f) return;
   const job = f.job;
-  for (const kind of ['before', 'after']) {
-    const box = $('#th-' + kind); if (!box) continue;
-    const local = pending(job, kind).map(q => '<button data-act="viewq" data-k="' + kind + '" data-id="' + q.k + '"><img src="' + q.data + '"><span class="q">Uploading</span></button>').join('');
-    if (local) box.innerHTML = local;
-    const list = await photoList(job, kind, navigator.onLine);
+  const draw = () => {
     if (S.view.screen !== 'job' || S.view.ref !== job.ref) return;
-    const el = $('#th-' + kind); if (!el) return;
-    if (!list.length && !local) continue;
-    el.innerHTML = list.map((p, i) => '<button data-act="view" data-k="' + kind + '" data-i="' + i + '"><img data-id="' + p.id + '" alt=""></button>').join('') + local;
-    for (const img of el.querySelectorAll('img[data-id]')) {
-      image(img.dataset.id).then(src => { if (src) img.src = src; }).catch(() => {});
+    const kB = job.ref + '|' + job.wo + '|before', kA = job.ref + '|' + job.wo + '|after';
+    const bl = S.lists[kB] || [], al = S.lists[kA] || [];
+    const pb = pending(job, 'before'), pa = pending(job, 'after');
+    const done = afterNums(job);
+    const tile = (inner, n, extra, act) => '<button ' + act + '>' + inner + (n ? '<span class="n">' + n + '</span>' : '') + (extra || '') + '</button>';
+    // before
+    const eb = $('#th-before');
+    if (eb && (bl.length || pb.length)) {
+      eb.innerHTML = bl.map((p, i) => { const n = numOf(p.name, i);
+        return tile('<img data-id="' + p.id + '" alt="">', n, done.has(n) ? '<span class="ok">✓</span>' : '', 'data-act="view" data-k="before" data-i="' + i + '"'); }).join('') +
+        pb.map(q => tile('<img src="' + q.data + '">', 0, '<span class="q">Uploading</span>', 'data-act="viewq" data-k="before" data-id="' + q.k + '"')).join('');
     }
-  }
+    // after: one slot per before number, then any extras
+    const ea = $('#th-after');
+    if (ea) {
+      const byNum = {};
+      al.forEach((p, i) => { byNum[numOf(p.name, i)] = { p: p, i: i }; });
+      pa.forEach(q => { if (q.num) byNum[q.num] = { q: q }; });
+      const slots = [...new Set(beforeNums(job))].sort((x, y) => x - y);
+      const html = [];
+      const cell = (n, it) => it.q ? tile('<img src="' + it.q.data + '">', n, '<span class="q">Uploading</span>', 'data-act="viewq" data-k="after" data-id="' + it.q.k + '"')
+        : tile('<img data-id="' + it.p.id + '" alt="">', n, '', 'data-act="view" data-k="after" data-i="' + it.i + '"');
+      slots.forEach(n => { html.push(byNum[n] ? cell(n, byNum[n]) : '<div class="miss"><b>' + n + '</b>missing</div>'); delete byNum[n]; });
+      Object.keys(byNum).map(Number).sort((x, y) => x - y).forEach(n => html.push(cell(n, byNum[n])));
+      pa.filter(q => !q.num).forEach(q => html.push(tile('<img src="' + q.data + '">', 0, '<span class="q">Uploading</span>', 'data-act="viewq" data-k="after" data-id="' + q.k + '"')));
+      if (html.length) ea.innerHTML = html.join('');
+    }
+    for (const img of document.querySelectorAll('.thumbs img[data-id]')) image(img.dataset.id).then(src => { if (src) img.src = src; }).catch(() => {});
+  };
+  draw();
+  await Promise.all(['before', 'after'].map(k => photoList(job, k, navigator.onLine).catch(() => [])));
+  draw();
 }
 
 /* ---------------- viewer ---------------- */
@@ -484,6 +533,7 @@ async function viewer(kind, start) {
   el.innerHTML = '<div class="vbar"><button class="vx" data-v="x">✕</button><span class="vc"></span><button class="vdel" data-v="del">' +
     '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>Remove</button></div>' +
     '<div class="im"><img alt=""></div><div class="vname"></div>' +
+    (kind === 'before' ? '<div class="vpair"></div><div class="vmatch"><button class="vtake" data-v="take"></button><button class="vlib" data-v="lib">🖼 From phone</button></div>' : '') +
     '<div class="nav"><button data-v="p">‹ Prev</button><button data-v="n">Next ›</button></div>';
   document.body.appendChild(el);
   const img = el.querySelector('img'), cap = el.querySelector('.vc'), nm = el.querySelector('.vname'), box = el.querySelector('.im');
@@ -493,6 +543,14 @@ async function viewer(kind, start) {
     cap.textContent = (kind === 'before' ? 'Before' : 'After') + ' · ' + (i + 1) + ' of ' + list.length;
     nm.textContent = it.name.replace(/\.[a-z]+$/i, '');
     el.querySelector('.vdel').style.visibility = it.local ? 'hidden' : 'visible';
+    if (kind === 'before') {
+      const n = numOf(it.name, i), has = afterNums(job).has(n);
+      cap.textContent = 'Before ' + n + ' · ' + (i + 1) + ' of ' + list.length;
+      el.querySelector('.vpair').innerHTML = has ? '<span class="vok">✓ After ' + n + ' done</span>' : 'No after photo for this one yet';
+      el.querySelector('.vtake').innerHTML = '📷 ' + (has ? 'Retake after ' : 'Take after ') + n;
+      el.querySelector('.vtake').classList.toggle('redo', has);
+      el.querySelector('.vmatch').style.display = it.local ? 'none' : '';
+    }
     if (it.local) { img.src = it.local; return; }
     img.src = imgMem[it.id] || (await image(it.id).catch(() => '')) || '';
     if (navigator.onLine && !big[it.id]) {      // swap in a sharper copy for zooming
@@ -506,6 +564,16 @@ async function viewer(kind, start) {
     if (v.dataset.v === 'x') close();
     if (v.dataset.v === 'p') { i = (i - 1 + list.length) % list.length; show(); }
     if (v.dataset.v === 'n') { i = (i + 1) % list.length; show(); }
+    if (v.dataset.v === 'take' || v.dataset.v === 'lib') {
+      const n = numOf(list[i].name, i);
+      pick('after', v.dataset.v === 'take', n, () => {
+        // jump to the next before that still needs its after
+        const done = afterNums(job);
+        for (let k = 1; k <= list.length; k++) { const j = (i + k) % list.length; if (!list[j].local && !done.has(numOf(list[j].name, j))) { i = j; break; } }
+        show();
+      });
+      return;
+    }
     if (v.dataset.v === 'del') removeFlow(job, kind, list[i]).then(async gone => {
       if (!gone) return;
       list = await build();

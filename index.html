@@ -104,6 +104,15 @@ button{border:0;cursor:pointer;background:none}
 .thumbs button{aspect-ratio:1;border-radius:12px;overflow:hidden;background:#0d1622;position:relative;padding:0}
 .thumbs img{width:100%;height:100%;object-fit:cover;display:block}
 .thumbs .q{position:absolute;left:0;right:0;bottom:0;font-size:11px;background:rgba(245,165,36,.92);color:#000;font-weight:600;padding:2px 0;text-align:center}
+.thumbs .n{position:absolute;left:4px;top:4px;background:rgba(0,0,0,.65);color:#fff;font-size:12px;font-weight:700;border-radius:6px;padding:0 5px}
+.thumbs .ok{position:absolute;right:4px;bottom:4px;width:20px;height:20px;border-radius:10px;background:var(--green);color:#06210f;font-size:13px;font-weight:700;text-align:center;line-height:20px}
+.miss{aspect-ratio:1;border:2px dashed var(--line);border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--mute);font-size:12px}
+.miss b{font-size:16px;color:#c9d4e2}
+.vpair{text-align:center;color:#9aa;font-size:15px;padding:6px 12px 0}.vok{color:#6fe0a0;font-weight:600}
+.vmatch{display:grid;grid-template-columns:1.3fr 1fr;gap:10px;padding:10px 12px 0}
+.vtake{height:64px;border-radius:16px;background:var(--flame);color:#fff;font:700 21px BarlowC,Barlow,sans-serif}
+.vtake.redo{background:#3a2a1c;color:#ffc261;border:2px solid #6b4a24}
+.vlib{height:64px;border-radius:16px;border:2px solid #3b4a60;color:#fff;font:700 19px BarlowC,Barlow,sans-serif}
 .none{grid-column:1/-1;border:2px dashed var(--line);border-radius:14px;color:var(--mute);text-align:center;padding:22px 10px;font-size:16px}
 .acts{display:grid;grid-template-columns:1.25fr 1fr;gap:10px}
 .pbtn,.sbtn{display:flex;align-items:center;justify-content:center;gap:10px;height:64px;border-radius:16px;font:700 20px BarlowC,Barlow,sans-serif;letter-spacing:.2px}
@@ -167,6 +176,6 @@ textarea.in{min-height:90px}
 <div id="app"></div>
 <input id="camIn" type="file" accept="image/*" capture="environment" hidden>
 <input id="libIn" type="file" accept="image/*" multiple hidden>
-<script src="app.js?v=3.4.3"></script>
+<script src="app.js?v=3.5.0"></script>
 </body>
 </html>
