@@ -1,5 +1,5 @@
 /* Offline cache for the app shell. Bump VERSION when app files change. */
-const VERSION = 'fl-v3.4.2';
+const VERSION = 'fl-v3.4.3';
 const SHELL = ['./', 'index.html', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png',
   'fonts/barlow-latin-500-normal.woff2', 'fonts/barlow-latin-600-normal.woff2', 'fonts/barlow-semi-condensed-latin-700-normal.woff2'];
 
@@ -16,6 +16,6 @@ self.addEventListener('fetch', e => {
   if (url.pathname.includes('/archive/') || url.pathname.endsWith('hq.html')) return;
   e.respondWith(
     fetch(e.request, { cache: 'no-cache' }).then(res => { const copy = res.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); return res; })
-      .catch(() => caches.match(e.request).then(r => r || caches.match('index.html')))
+      .catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match('index.html')))
   );
 });
