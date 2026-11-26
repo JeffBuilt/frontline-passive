@@ -613,17 +613,24 @@ function nightlySweep() {
       if (!it.hasNext()) continue;
       const sub = it.next();
       const label = kind === 'after' ? 'After' : 'Before';
-      const ok = new RegExp('^' + job.ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b.*\\b(Before|After) \\d+', 'i');
+      const base = job.ref.replace(/\.[A-Z0-9]+$/i, '');   // VP26188.B -> VP26188 (Drive names often drop the suffix)
+      const ok = new RegExp('^(' + job.ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '|' + base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')\\b.*\\b(Before|After) \\d+', 'i');
+      const numRe = new RegExp('\\b' + label + ' (\\d+)\\b', 'i');
       const loose = [];
+      let max = 0;
       const files = sub.getFiles();
       while (files.hasNext()) {
         const x = files.next();
-        if (/^image\//.test(x.getMimeType()) && !ok.test(x.getName())) loose.push(x);
+        if (!/^image\//.test(x.getMimeType())) continue;
+        if (ok.test(x.getName())) { const m = x.getName().match(numRe); if (m) max = Math.max(max, Number(m[1])); }
+        else loose.push(x);
       }
+      const ar = sub.getFoldersByName(ARCHIVE);
+      if (ar.hasNext()) { const af = ar.next().getFiles(); while (af.hasNext()) { const m = af.next().getName().match(numRe); if (m) max = Math.max(max, Number(m[1])); } }
       loose.sort((a, b) => a.getDateCreated() - b.getDateCreated());
       for (const x of loose) {
         const ext = (x.getName().match(/\.(\w{2,4})$/) || [, 'jpg'])[1].toLowerCase();
-        const n = nextNumber_(sub, label);
+        const n = ++max;   // numbered straight after the properly named photos, so loose ones start at 1 in an empty folder
         const name = [job.ref, short_(job.loc), label + ' ' + n].filter(String).join(' - ').replace(/[\/\\:*?"<>|]/g, '-') + '.' + ext;
         x.setDescription('Original name: ' + x.getName());
         x.setName(name);
@@ -636,6 +643,46 @@ function nightlySweep() {
   }
   Logger.log('Photo tidy: ' + renamed + ' renamed, ' + recounted + ' counts fixed');
   return { renamed: renamed, recounted: recounted };
+}
+
+/**
+ * One-off repair for the 27 Nov 2026 tidy run, which numbered loose photos too high and renamed "VP26188 …" photos in the VP26188.B folder.
+ * Photos whose original name already had a number get it back; the rest are renumbered straight after the job's other photos.
+ */
+function repairTidy27Nov() {
+  const since = new Date('2026-11-26T19:59:00Z'), until = new Date('2026-11-26T20:10:00Z');
+  const fixed = [];
+  for (const f of foldersIndex_()) {
+    let folder; try { folder = DriveApp.getFolderById(idFromUrl_(f.url)); } catch (e) { continue; }
+    for (const kind of ['before', 'after']) {
+      const it = folder.getFoldersByName(SUB[kind]); if (!it.hasNext()) continue;
+      const sub = it.next(), label = kind === 'after' ? 'After' : 'Before';
+      const numRe = new RegExp('\\b' + label + ' (\\d+)\\b', 'i');
+      const touched = [], kept = [];
+      const files = sub.getFiles();
+      while (files.hasNext()) {
+        const x = files.next();
+        if (!/^image\//.test(x.getMimeType())) continue;
+        const d = String(x.getDescription() || ''), t = x.getLastUpdated();
+        if (/^Original name: /.test(d) && t >= since && t <= until) touched.push(x); else kept.push(x);
+      }
+      if (!touched.length) continue;
+      let max = 0;
+      kept.forEach(x => { const m = x.getName().match(numRe); if (m) max = Math.max(max, Number(m[1])); });
+      touched.sort((a, b) => a.getDateCreated() - b.getDateCreated());
+      for (const x of touched) {
+        const orig = String(x.getDescription()).replace(/^Original name: /, '');
+        const was = x.getName();
+        let name;
+        if (numRe.test(orig)) name = orig;                                   // it had a proper number already: put it back
+        else name = was.replace(numRe, label + ' ' + (++max));                 // renumber after the job's other photos
+        if (name !== was) { x.setName(name); fixed.push(was + '  ->  ' + name); }
+      }
+      if (f.row) foldersSheet_().getRange(f.row, kind === 'after' ? F.after : F.before).setValue(images_(sub).length);
+    }
+  }
+  Logger.log(fixed.length + ' fixed\n' + fixed.join('\n'));
+  return fixed;
 }
 
 /** Run once (sheet menu Frontline > Turn on nightly photo tidy). Runs every night around 2am. */
